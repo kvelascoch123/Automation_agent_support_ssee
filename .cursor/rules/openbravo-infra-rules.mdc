@@ -1,0 +1,57 @@
+---
+description: Reglas para ajustar Docker, JVM y PostgreSQL en entornos Openbravo sobre un solo servidor.
+globs: docker-compose.yml tomcat/** postgres/**
+alwaysApply: false
+---
+
+# Reglas de infraestructura para Docker (Openbravo)
+
+- **Dimensionar heap de Java**
+  - Nunca proponer `-Xmx` mayor al **60% de la RAM física** del servidor.
+  - Mantener `-Xms` igual o menor a `-Xmx`, y evitar que `Xms` sea tan alto que impida al GC devolver memoria al sistema operativo.
+
+- **Relación `Xmx` vs `mem_limit`**
+  - `mem_limit` del contenedor Tomcat debe ser aproximadamente `Xmx + 30–50%` para cubrir:
+    - Metaspace
+    - Stacks de hilos
+    - Buffers nativos, caches, etc.
+  - No proponer `mem_limit` igual a la RAM física si en el host corren otros servicios (como PostgreSQL).
+
+- **Límites de CPU**
+  - Al sugerir cambios, usar siempre `cpus` en los servicios Docker cuando el host tenga varios contenedores.
+  - Evitar que la suma de `cpus` de todos los servicios supere de forma significativa los núcleos disponibles.
+
+- **PostgreSQL (`postgres` service)**
+  - No sugerir `shared_buffers` mayor al **25–30% de la RAM física** del servidor.
+  - Evitar recomendar `max_connections` muy altos (ej. > 500) salvo que el usuario justifique la necesidad.
+  - Ajustar `effective_cache_size` alrededor de 2–3× `shared_buffers`, sin superar lo razonable para el host.
+
+- **Evitar OOM del sistema**
+  - Si el usuario muestra logs `Out of memory: Killed process java`:
+    - Priorizar reducir `Xmx` y/o `shared_buffers` antes que aumentar límites.
+    - Explicar el razonamiento ligando consumo de Java, Postgres y RAM física.
+    - Mencionar posibles puntos calientes de código que pueden disparar el uso de memoria, especialmente en módulos personalizados `sidesoft`.
+
+- **Logs y observabilidad**
+  - Siempre que se propongan cambios de memoria para Java, recomendar activar logs de GC (archivo dedicado) para futuras investigaciones.
+
+- **Puntos de código conocidos que pueden degradar el servicio**
+  - Al analizar degradaciones de rendimiento o picos de memoria:
+    - No asumir que las clases problemáticas son las mismas en todos los proyectos.
+    - Buscar en los módulos **custom** del proyecto (por ejemplo prefijos `sidesoft`, `custom`, `ec.com.*`, etc.) patrones como:
+      - Webservices que:
+        - Devuelven grandes listas de elementos (`List`, `JSONArray`, etc.) sin paginación.
+        - Incluyen imágenes u otros blobs codificados (base64) en cada elemento.
+      - Procesos en background que:
+        - Recorren muchas filas sin límites ni partición en lotes.
+        - Construyen colecciones grandes en memoria antes de escribir a BD o a un sistema externo.
+    - Cuando se identifiquen clases concretas en el proyecto actual, mencionarlas por:
+      - **Nombre de clase**
+      - **Módulo**
+      - **Causa probable** (por ejemplo: listas sin límite, transacciones muy grandes, falta de paginación).
+  - Al proponer soluciones de infraestructura, indicar explícitamente si también es recomendable:
+    - Añadir paginación o límites en los WS.
+    - Evitar devolver datos pesados cuando no son necesarios.
+    - Fragmentar procesos grandes en lotes más pequeños.
+
+

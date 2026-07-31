@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+name: openbravo_kb_trigger_aliases
+description: Define palabras clave para activar o recargar la base de conocimiento BDC.
+
+rules:
+  - instruction: >
+      Considera como disparadores válidos de esta lógica las siguientes expresiones:
+      "BDC"
+      "usa la BDC"
+      "consulta la BDC"
+      "analiza con la BDC"
+      "carga la BDC"
+      "recarga la BDC"
+      "actualiza la BDC"
+
+  - instruction: >
+      Si el usuario solo escribe "BDC" al inicio o dentro de la consulta,
+      debes interpretar que desea que la respuesta se base en la base de conocimiento cargada.

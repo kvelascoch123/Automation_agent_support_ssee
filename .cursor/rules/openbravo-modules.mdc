@@ -1,0 +1,52 @@
+---
+description: Keep Openbravo module knowledge docs in sync when editing any ec.com.* module (per-module docs/knowledge and docs_customization/knowledge).
+globs: ec.com.*/**
+alwaysApply: false
+---
+
+# Openbravo modules — documentation discipline
+
+This repo has **one knowledge base per functional module** under:
+
+- `{module}/docs/knowledge/` — inventario técnico del módulo
+- `{module}/docs_customization/knowledge/` — personalización Unnoparts (prioridad para soporte y guías operativas)
+
+When you change dictionary XML, data model, or custom code:
+
+## Which module to document
+
+1. Edit docs under the **same folder** as the code (e.g. `ec.com.sidesoft.credit.formality/docs/knowledge/` and/or `docs_customization/knowledge/`), not another module's tree.
+2. If the user or ticket names a Java package, that folder is the knowledge root.
+3. For cross-cutting credit-factory questions, check `INDEX.md` *handoff* in `ec.com.sidesoft.credit.factory/docs/knowledge/` (and `docs_customization` if exists) before duplicating content in sibling modules.
+
+## After code changes
+
+1. Update the relevant topic in **`{module}/docs/knowledge/`** and/or **`{module}/docs_customization/knowledge/`** (see that module's `INDEX.md`), or regenerate tables:
+
+   ```bash
+   python3 generate_module_docs.py {module} --refresh-only
+   ```
+
+   (from repo root; replace `{module}` with the folder you edited)
+
+2. If you change **user-visible Spanish labels**, update **`{module}.es_ES/referencedata/translation/`** (`AD_*_TRL_es_ES.xml`) and re-run the command above on the **base** module (not only `.es_ES`).
+
+3. For new chat/support scenarios, extend **`01-user-chat-guide.md`** or **`MANIFEST.json`** (`example_user_queries` / `topics`) in **both** roots when the scenario is Unnoparts-specific (`docs_customization`).
+
+4. Prefer concise knowledge Markdown over duplicating `src-db` XML in docs.
+
+5. New major window, process, or Java entry point: add a short entry to that module's **`MANIFEST.json`** or extend keywords on an existing topic.
+
+## Skills that consume these docs
+
+- **`openbravo-modules`** — hub; reads `docs` + `docs_customization`; **§4 verifica UI en `src-db`**
+- **`openbravo-functional-ticket-analysis`** — análisis consultor (sección 5D)
+- **`openbravo-operational-walkthrough`** — guía operativa (solo UI confirmada en código del repo)
+
+## Modules without docs/knowledge yet
+
+Run from repo root:
+
+```bash
+python3 generate_module_docs.py {module} --init
+```

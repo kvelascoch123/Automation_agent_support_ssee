@@ -1,0 +1,20 @@
+---
+description: >-
+  When the user gives an EEI_INVOICELOG_ID or C_INVOICE_ID for Ecuador electronic invoicing errors,
+  run the full FE log analysis workflow (MCP postgres + facturaec Java). Use for Registro
+  Histórico FE, SRI NO AUTORIZADO, or liquidación/factura electrónica rejections.
+alwaysApply: false
+globs:
+  - modules/ec.cusoft.facturaec/**
+  - .cursor/skills/ob-fe-eei-invoicelog-analysis/**
+---
+
+# Errores FE Ecuador — EEI_INVOICELOG
+
+Cuando el usuario aporte **`EEI_INVOICELOG_ID`** y/o **`C_INVOICE_ID`** (o "id del registro con error" + "id de la transacción"):
+
+1. **Leer** `.cursor/skills/ob-fe-eei-invoicelog-analysis/SKILL.md` y seguir su flujo (SQL + archivo Java por `edoc_type`).
+2. Usar MCP **`user-postgres`** (`query`): comprobar esquema del tool si hace falta; tablas clave `eei_invoicelog`, `c_invoice`, `c_invoicetax`, `c_invoiceline`, `c_invoicelinetax`, `c_tax`.
+3. **No limitarse** a repetir el texto de `description`: explicar causa raíz (alineación `C_TAX.rate` vs `em_eei_sri_taxcat_code`, sumas cabecera/detalle, etc.) y acciones correctivas.
+
+Si falta un ID, pedir explícitamente el UUID de **`EEI_INVOICELOG`** o de **`C_INVOICE`**.

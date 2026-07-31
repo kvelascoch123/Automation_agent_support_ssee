@@ -1,0 +1,87 @@
+---
+description: Estándar de cabecera para reportes JRXML (Openbravo)
+globs: "**/*.jrxml"
+alwaysApply: false
+---
+
+# Estándar de Cabecera para Reportes JasperReports
+
+## Estructura obligatoria del band `<title>`
+
+Todos los reportes deben incluir en la cabecera:
+
+### 1. Logo (izquierda superior)
+- **Posición:** x=0, y=0, width=120, height=80
+- **Expresión:** `org.openbravo.erpCommon.utility.Utility.showImageLogo("yourcompanylegal", $F{organizationid})`
+
+### 2. Título del reporte (centro) — en title
+- **Posición:** centrado en el band
+- **Estilo:** textAlignment="Center", font size="18" isBold="true"
+- **textFieldExpression:** El texto DEBE ir entre comillas dobles (es expresión Java)
+  - ❌ `MERMA DE INYECCIÓN...` → Error "Syntax error on token DE" (parser interpreta como código)
+  - ✅ `"MERMA DE INYECCIÓN RESPECTO A LA MATERIA PRIMA"` → Correcto
+
+### 3. Bloque de auditoría → en pageHeader (obligatorio)
+Debe estar en `<pageHeader>`, NO en `<title>`, para que aparezca en **cada hoja**.
+Orden vertical de elementos:
+- **Página** (y=0): `$V{PAGE_NUMBER}` y total de páginas
+- **Fecha** (y=15): `$F{fechaimpresion}` con pattern="dd/MM/yyyy"
+- **Hora** (y=30): `$F{fechaimpresion}` con pattern="HH:mm:ss"
+- **Usuario** (y=45): `$F{usuario}`
+
+### 4. Filtros de rango (izquierda, opcional si aplica)
+- **Fecha Inicio** (y=85): `$P{DateFrom}` con pattern="dd/MM/yyyy"
+- **Fecha Fin** (y=100): `$P{DateTo}` con pattern="dd/MM/yyyy"
+
+## Parámetros obligatorios
+```xml
+<parameter name="AD_User_ID" class="java.lang.String" isForPrompting="false"/>
+```
+
+## Campos obligatorios en el query
+El SELECT debe incluir:
+- `mt.ad_org_id as organizationid` (o equivalente según tabla base)
+- `now() as fechaimpresion`
+- `(SELECT au.name FROM ad_user au WHERE au.ad_user_id = $P{AD_User_ID}) as usuario`
+
+## Declaración de fields
+```xml
+<field name="organizationid" class="java.lang.String"/>
+<field name="fechaimpresion" class="java.sql.Timestamp"/>
+<field name="usuario" class="java.lang.String"/>
+```
+
+## Dimensiones de página (estándar)
+- pageWidth="1000" pageHeight="842"
+- columnWidth="960" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20"
+
+## UUID (obligatorio)
+- El atributo `uuid` en jasperReport y en cada reportElement debe ser un **UUID válido**
+- Formato: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (solo dígitos hexadecimales: 0-9, a-f)
+- ❌ Inválido: `a1b2c3d4-injection-loss-0001-0000-000000000001` (contiene "injection", "loss")
+- ✅ Válido: `a1b2c3d4-e5f6-4a01-8001-000000000001`
+
+## Subreportes
+
+### Parámetro BASE_DESIGN (iReport / runtime)
+- Si el `subreportExpression` utiliza `$P{BASE_DESIGN}`, declarar `BASE_DESIGN` (class="java.lang.String") con `isForPrompting="true"`.
+- En iReport, esto corresponde a activar el checkbox **“Use as a prompt”** en el parámetro `BASE_DESIGN`.
+- Objetivo: evitar que `BASE_DESIGN` quede en `null` al llenar el reporte desde iReport (lo que rompe la resolución del `.jasper` del subreporte).
+
+### Uso en el reporte
+- **Expresión del subreporte:** construir siempre la ruta con `BASE_DESIGN`, por ejemplo:
+  - `$P{BASE_DESIGN} + "/ec/com/sidesoft/.../ad_reports/NOMBRE.jasper"` .
+- **Conexión:** `connectionExpression`: `$P{REPORT_CONNECTION}`.
+- **Orden en el elemento &lt;subreport&gt;:** reportElement → subreportParameter(s) → connectionExpression → subreportExpression.
+- Compilar **primero** el .jrxml del subreporte; después el reporte principal.
+
+## Consultas y rendimiento (no matar la base de datos)
+- **Siempre acotar** el query del reporte: filtros por rango de fechas, producto, organización (o equivalente). Evitar SELECT sin WHERE que recorra tablas grandes.
+- **Subreporte que se ejecuta por fila:** si el reporte principal devuelve N filas, el subreporte se ejecuta N veces. Mantener el query del subreporte **ligero** (filtro por ID/Clave, sin agregados pesados ni muchos JOIN). Valorar si N puede ser muy alto (cientos de filas) y si conviene otro diseño.
+- Preferir **CTEs y filtros tempranos** (ej. wr_en_rango por fechas) para reducir datos antes de JOINs. Índices en columnas de filtro (fechas, IDs) ayudan.
+- Evitar subconsultas correlacionadas en bucle; si hay totales por grupo, calcular en el query principal o en variables, no con N consultas extra.
+
+## Notas
+- Usar band height="134" para el title cuando se incluyen todos los elementos
+- pageHeader: altura según contenido; debe incluir el bloque de auditoría completo
+- Cabeceras de columnas (columnHeader): **no** usar color de fondo (backcolor); no es estándar. Sin backcolor en las celdas de cabecera.

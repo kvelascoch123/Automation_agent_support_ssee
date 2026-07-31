@@ -1,0 +1,47 @@
+---
+alwaysApply: true
+---
+
+name: openbravo_functional_ticket_trigger_aliases
+description: Palabras clave que activan el análisis automático de tickets funcionales y consultas de viabilidad Openbravo.
+
+rules:
+  - instruction: >
+      Considera como disparadores válidos del flujo de análisis
+      (skill openbravo-functional-ticket-analysis) las siguientes expresiones o equivalentes:
+      "ANALIZA TICKET", "analizar ticket", "analizar caso", "ticket funcional",
+      "incidencia funcional", "caso de soporte", "error funcional".
+
+  - instruction: >
+      También activa el flujo para consultas de viabilidad / capacidad funcional del ERP,
+      sin requerir mensaje de error, cuando el usuario use expresiones como:
+      "¿existe la posibilidad de?", "¿el sistema permite?", "¿se puede?",
+      "necesito saber si", "¿cómo se hace en Openbravo?" (si el foco es si es posible
+      y cómo operarlo), o describa una operación de negocio con documentos Openbravo
+      (factura, nota de crédito, cobro, plan de pagos, conciliación, pedido, etc.)
+      sin reportar un fallo concreto.
+
+  - instruction: >
+      También activa el flujo cuando el usuario describa un incidente Openbravo con al menos
+      dos de estos elementos: (a) síntoma de fallo (no funciona, no concilia, error, falla),
+      (b) contexto de pantalla/proceso/módulo, (c) pasos para reproducir o mensaje de error,
+      (d) datos de negocio (documento, importe, fecha, referencia, tercero, cuenta).
+
+  - instruction: >
+      Al detectar activación, lee y aplica la regla openbravo-functional-ticket-analysis
+      y el skill .cursor/skills/openbravo-functional-ticket-analysis/SKILL.md.
+      Detecta subtipo (incidencia vs consulta de viabilidad), normaliza con Paso 0 o 0B,
+      desglosa preguntas amplias en sub-capacidades y valida core + personalizaciones
+      del proyecto antes de concluir. No exijas plantilla formal al usuario.
+
+  - instruction: >
+      No actives este flujo si el usuario solo pide desarrollo, compilación o consulta BDC;
+      en ese caso usa las reglas/skills correspondientes.
+
+  - instruction: >
+      En consultas de viabilidad, la sección 7 debe ser respuesta copiable al usuario final:
+      primera línea directa (SÍ/NO/PARCIAL + qué permite y qué no), párrafo «Por qué»,
+      procedimiento numerado e «Importante». No uses lista «Detalle por capacidad» en
+      sección 7 (la matriz Sí/No/Parcial va en secciones 3–5 para el consultor).
+      En incidencias, prioriza error de proceso, flujo correcto y corrección.
+      No uses SQL ni parches en la sección 7; reserva lo técnico para secciones 5–6.

@@ -1,0 +1,37 @@
+---
+description: Guía estándar para análisis y corrección de errores en Openbravo WebPOS
+alwaysApply: false
+---
+
+# Regla – Soporte POS Openbravo
+
+Cuando el contexto incluya archivos o errores relacionados con `org.openbravo.retail.posterminal`, `org.openbravo.mobile.core` o módulos POS externos (por ejemplo giftcards), actúa como especialista en Openbravo WebPOS.
+
+- **Errores de JavaScript en consola**
+  - Si aparece `no constructor found for kind "X"`:
+    - Interpreta que el `kind` viene normalmente de un *Payment Provider* mal configurado o de un componente no implementado.
+    - Busca el string en el código.  
+      - Si no existe, indica que el valor proviene de configuración de backoffice (ventana *Payment Method*) y recomienda vaciar o corregir el campo *Payment Provider* / *Refund Provider*.
+  - Si aparece `Error registering model: no modelName provided`:
+    - Localiza qué modelo se pasa a `OB.Data.Registry.registerModel`.
+    - Asegúrate de que la clase `OB.Data.ExtensibleModel.extend({ ... })` tenga un `modelName` (y, si aplica, `_modelName`) coherente.
+
+- **Flujos de pago y popups**
+  - Para problemas con métodos de pago (incluida GiftCard), sigue siempre este orden de análisis:
+    - `payment.js` → eventos `onPaymentActionPay`.
+    - `pointofsale.js` → `paymentActionPay`.
+    - `keyboard-toolbars.js` → `pay`, `payWithProviderGroup`, `payAmountWithProviderGroup`.
+    - `modalpayment.js` y el `kind` del proveedor configurado.
+  - Para GiftCard, prioriza el uso de `OB.UI.GiftCardUtilsRetail.consumeGiftCard(...)` como entrada al flujo y, si falta configuración, muestra al usuario un aviso claro (por ejemplo `Falta realizar configuraciones de la giftcard`).
+
+- **Pantalla bloqueada en “Forcing refresh of local database”**
+  - Verifica primero que no haya errores `Uncaught` en consola.
+  - Revisa la pestaña **Network** para detectar peticiones XHR bloqueadas o con código de error.
+  - Si es un problema local, sugiere limpiar IndexedDB y `localStorage` del dominio del POS y reintentar.
+
+- **Buenas prácticas**
+  - Siempre que se modifiquen ficheros fuente del POS, recuerda al usuario que debe:
+    - Regenerar JS (por ejemplo `ant smartbuild -Dforce=yes`) y reiniciar Tomcat.
+    - Hacer un hard reload del navegador.
+  - Explica las soluciones de forma breve y accionable, siempre en **español**.
+

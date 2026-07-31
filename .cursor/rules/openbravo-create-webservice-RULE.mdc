@@ -1,0 +1,54 @@
+---
+description: Creación de servicios Web Openbravo portables (POST, JSON/form, sin dependencias de proyecto)
+globs: **/*WebService*.java,**/service/*.java
+alwaysApply: false
+---
+
+# Servicios Web Openbravo Portables
+
+Al crear o modificar servicios Web en Openbravo, seguir estos principios para garantizar reutilización en cualquier entorno.
+
+## Fuente de parámetros
+
+- **Sin especificar**: Los parámetros se envían vía el servicio (body JSON o form-urlencoded). El cliente provee todo en la petición.
+- **Desde ventana/configuración**: Si el usuario indica que los parámetros deben recuperarse de una ventana o tabla de configuración, **obligatoriamente especificar**: nombre de la ventana (AD_Window), ruta del archivo XML/entidad, o tabla (ej. `SHPPWS_CONFIG` → `ec.com.sidesoft.happypay.web.services.shppws_config`). No asumir fuentes genéricas.
+
+## Método y contenido
+
+- **POST** como método principal. GET debe devolver 405 con mensaje "Use POST method".
+- Aceptar **application/json** (body) y **application/x-www-form-urlencoded**.
+- Parsear JSON con `BufferedReader` + `InputStreamReader` + `JSONObject` (Jettison). No usar helpers específicos del proyecto (ej. `SHPPWS_Helper`).
+
+## Dependencias
+
+- Solo: Java estándar, Openbravo core (OBDal, OBProvider, Utility, etc.), Jettison (JSONObject).
+- Evitar: tablas/config del proyecto, helpers propietarios, entidades custom salvo que el usuario lo exija explícitamente.
+
+## Imports críticos (evitar errores de compilación)
+
+- `DalConnectionProvider`: `org.openbravo.service.db.DalConnectionProvider` (no `org.openbravo.database`)
+- `DocumentType`: `org.openbravo.model.common.enterprise.DocumentType` (no `org.openbravo.model.common.order`)
+- Lista precios venta BP: `bp.getPriceList()` (no `getSalesPriceList()`)
+
+## Registro
+
+- Registrar el bean en `config/[modulo]-provider-config.xml` con nombre = nombre de la clase.
+- El nombre del bean define la ruta del endpoint.
+
+## Respuesta
+
+- `Content-Type: application/json`, `UTF-8`.
+- Estructura: `Message`, campos de resultado, IDs. En error: `Message: "Error: ..."`.
+
+## Transacciones
+
+- `OBDal.getInstance().getConnection().commit()` en éxito.
+- `OBDal.getInstance().getSession().getTransaction().rollback()` en catch.
+
+## Ejemplo de parámetros (creación de factura estándar)
+
+Obligatorios: `AD_Org_ID`, `C_DocType_ID`, `C_BPARTNER_ID`, `M_PRODUCT_ID`, `UnitPrice`.
+
+Opcionales: `Quantity`, `Description`, `M_PriceList_ID`, `C_Costcenter_ID`, `FIN_PaymentMethod_ID`, `C_PaymentTerm_ID`, `Process` (Y=completar, N=borrador).
+
+Referencia: `Standard_Invoice_Creation.java` en el módulo `ec.com.sidesoft.happypay.web.services`.

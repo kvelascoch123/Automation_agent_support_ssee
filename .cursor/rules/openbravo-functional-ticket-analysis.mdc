@@ -1,0 +1,85 @@
+---
+description: >-
+  Activa análisis automático de tickets e incidencias funcionales Openbravo, y consultas de
+  viabilidad ("¿el sistema permite…?"): normaliza, desglosa sub-capacidades, valida core +
+  personalizaciones del proyecto, veredicto SÍ/NO/PARCIAL y workaround operativo. Disparadores:
+  ANALIZA TICKET, ticket funcional, no funciona, no concilia, ¿existe la posibilidad?,
+  ¿se puede?, consulta de flujo ERP.
+alwaysApply: true
+---
+
+# Análisis automático de tickets funcionales Openbravo
+
+## Cuándo activar
+
+Activa el flujo de análisis cuando el mensaje del usuario sea:
+
+### A. Incidencia / ticket de soporte
+
+- **Problema operativo**: no funciona, no concilia, no deja guardar/procesar, falla, bloqueo, inconsistencia.
+- **Evidencia**: mensaje de error, pasos para reproducir, capturas, nº documento, importes.
+- **Disparadores**: `ANALIZA TICKET`, `analizar ticket`, `ticket funcional`, `incidencia funcional`, `caso de soporte`.
+
+### B. Consulta de viabilidad / capacidad funcional
+
+- **Pregunta directa** sobre un flujo del ERP sin síntoma de fallo, por ejemplo:
+  - «¿Existe la posibilidad de…?», «¿El sistema permite…?», «¿Se puede…?»
+  - «Necesito saber si…» + operación de negocio (NC, cobro, plan de pagos, conciliación, FE, etc.)
+- Aplica a **cualquier dominio**: ventas, tesorería, compras, inventario, FE, crédito, POS, integraciones.
+
+## Cuándo NO activar
+
+- Desarrollo puro: crear módulo, ventana, endpoint, SQL, refactor, commit, PR.
+- Compilación/update de BD sin incidencia o consulta funcional asociada.
+- Arquitectura teórica sin caso de negocio concreto.
+- Usuario activa **BDC** explícitamente → skill `openbravo-kb-error-analysis`.
+
+## Flujo obligatorio al activar
+
+1. **Leer** `.cursor/skills/openbravo-functional-ticket-analysis/SKILL.md` completo.
+2. **Detectar subtipo**: Incidencia (A) o Consulta de viabilidad (B); si mezcla ambos, aplicar los dos.
+3. **Normalizar** con plantilla del skill (Paso 0 o 0B).
+4. **Consultar módulos (obligatorio):** skill **`openbravo-modules`** — leer markdowns en `docs_customization/knowledge/` (prioridad) y `docs/knowledge/` de cada módulo candidato antes del veredicto.
+5. **En viabilidad:** desglosar en sub-capacidades y construir matriz Sí/No/Parcial **antes** de redactar.
+6. **Validar:** core Openbravo **y** personalizaciones documentadas en markdowns del proyecto; código solo si el markdown no cierra el caso.
+7. **Responder** con formato de 9 secciones (incidencia o viabilidad según subtipo); sección **5D** con módulos/markdowns consultados.
+
+## Reglas de salida
+
+- Secciones 1–6, 8–9: **consultor → técnico de soporte**.
+- Sección 7: **usuario final / operaciones** — texto copiable.
+- **Viabilidad:** sección 7 debe incluir **veredicto explícito** (SÍ/NO/PARCIAL) y **workaround en pasos** si no es directo.
+- Listar **datos faltantes** si no se cierra al 100%.
+- No ejecutar compilación sin confirmación del usuario.
+
+## Sección 7 — Incidencia
+
+Diagnóstico de error de proceso, por qué está mal, flujo correcto, pasos de corrección. Sin SQL ni parches.
+
+## Sección 7 — Consulta de viabilidad
+
+Redactar como **respuesta copiable al usuario final** (tono consultor → cliente). **No** usar lista «Detalle por capacidad»; la matriz Sí/No/Parcial va en secciones 3–5.
+
+Estructura obligatoria:
+
+1. **Respuesta directa** — primera línea: **SÍ**, **NO** o **PARCIAL** + oración que diga qué permite y qué no permite el sistema (negrita en la limitación principal).
+2. **Por qué** — uno o dos párrafos narrativos (regla de negocio, ejemplo concreto si ayuda).
+3. **Procedimiento recomendado** — pasos numerados 1, 2, 3… (opcional subtítulo contextual; paso 4 de validación/escalamiento si aplica).
+4. **Importante** — qué evitar.
+
+Sin inventario de módulos, SQL ni nombres técnicos; eso va en sección 5D.
+
+Ver plantilla completa y ejemplo en skill § *Plantillas obligatorias — Sección 7* (consulta de viabilidad).
+
+## Encadenamiento con guía operativa
+
+Tras el análisis, si el usuario pide **GUIA OPERATIVA**, **CREA FLUJO** o equivalente:
+
+1. Activar skill **`openbravo-operational-walkthrough`**.
+2. Usar sección 7 (*Procedimiento recomendado*) como insumo.
+
+## Disparadores rápidos
+
+- `ANALIZA TICKET`, `analizar ticket`, `ticket funcional`
+- Síntoma + contexto Openbravo + reproducción
+- `¿existe la posibilidad?`, `¿el sistema permite?`, `¿se puede?`, `necesito saber si`
