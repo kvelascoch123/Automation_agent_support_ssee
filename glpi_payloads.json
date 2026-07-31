@@ -1,0 +1,131 @@
+{
+  "followups": {
+    "9477": [
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9477,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-PRIMER-CONTACTO]",
+        "content": "<div style=\"font-family: Arial, sans-serif; font-size: 11pt;\">\n<h3>Triage Automático Iniciado</h3>\n<p>Se ha detectado ticket de soporte técnico en proyecto UNNOPARTS.</p>\n<p><strong>Módulo identificado:</strong> Logística / Guías de Remisión</p>\n<p><strong>Clasificación:</strong> Configuración (probablemente)</p>\n<p><strong>Criticidad inferida:</strong> Media-Alta (calificación comercial en proceso)</p>\n<p>El análisis completo está en proceso. Será publicado en breve.</p>\n</div>"
+      },
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9477,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-ANALISIS-9PASOS]",
+        "content_file": "ANALISIS_9477.md"
+      },
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9477,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-SCORE]",
+        "content": "<div style=\"font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; background-color: #f5f5f5; padding: 15px; border-radius: 5px; border-left: 4px solid #0066cc;\">\n\n<h3 style=\"margin-top: 0; color: #0066cc;\">Score de Acertividad: <strong>75/100</strong></h3>\n\n<p><strong>Evaluación:</strong> Buena evidencia con 1 supuesto razonable no confirmado (confianza Media)</p>\n\n<p><strong>Justificación del score:</strong></p>\n<ul style=\"margin: 10px 0;\">\n<li><strong>✅ Puntos positivos (+):</strong>\n  <ul>\n  <li>Módulo claramente identificado: Guía de Remisión Manual (Logística)</li>\n  <li>Síntomas específicos: 3 campos concretos sin llenar (Placa, RUC, Teléfono)</li>\n  <li>Criticidad bien contextualizada (calificación OEA Honda)</li>\n  <li>Pasos para reproducir: crear guía, rellenar, generar, revisar PDF</li>\n  </ul>\n</li>\n<li><strong>❌ Datos faltantes (-):</strong>\n  <ul>\n  <li>Captura de pantalla del PDF (esperado vs obtenido) — no adjunta</li>\n  <li>Número de guía específica que falló — no indicada</li>\n  <li>Versión Openbravo/Unnoparts — no mencionada</li>\n  <li>¿Ocurre con todos los transportistas o solo algunos? — no especificado</li>\n  </ul>\n</li>\n<li><strong>⚠️ Supuestos sin confirmar:</strong>\n  <ul>\n  <li>Se asume que el transportista tiene Placa registrada en maestro</li>\n  <li>Se asume que el destinatario tiene RUC en el sistema</li>\n  </ul>\n</li>\n</ul>\n\n<p><strong>Confianza del análisis:</strong> Media-Alta<br>\n<strong>¿Requiere desarrollo?:</strong> Por confirmar (probablemente solo configuración/reporte)</p>\n\n<p style=\"background-color: #fff3cd; padding: 10px; border-radius: 3px; margin-top: 15px; font-size: 10pt;\">\n<strong>Nota:</strong> Análisis basado solo en conocimiento estático del proyecto. \nVerificación en BD de Openbravo no disponible para este cliente. \nDiagnóstico sugiere revisión de template Jasper de guía de remisión.\n</p>\n\n</div>"
+      }
+    ],
+    "9478": [
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9478,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-PRIMER-CONTACTO]",
+        "content": "<div style=\"font-family: Arial, sans-serif; font-size: 11pt;\">\n<h3>Triage Automático Iniciado</h3>\n<p>Se ha detectado incidencia de cartera/cobranza en proyecto UNNOPARTS.</p>\n<p><strong>Módulo identificado:</strong> Tesorería / Pre-cancelación (APRM)</p>\n<p><strong>Clasificación:</strong> Incidencia contable</p>\n<p><strong>Criticidad:</strong> Alta (cliente con deuda procesada, impacta conciliación)</p>\n<p>El análisis completo está en proceso. Será publicado en breve.</p>\n</div>"
+      },
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9478,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-ANALISIS-9PASOS]",
+        "content_file": "ANALISIS_9478.md"
+      },
+      {
+        "id": "[auto-generated]",
+        "itemtype": "Ticket",
+        "items_id": 9478,
+        "users_id": 148,
+        "is_private": 1,
+        "marker": "[TRIAGE-SCORE]",
+        "content": "<div style=\"font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; background-color: #f5f5f5; padding: 15px; border-radius: 5px; border-left: 4px solid #cc6600;\">\n\n<h3 style=\"margin-top: 0; color: #cc6600;\">Score de Acertividad: <strong>82/100</strong></h3>\n\n<p><strong>Evaluación:</strong> Veredicto con buena evidencia, sin datos faltantes críticos (confianza Alta)</p>\n\n<p><strong>Justificación del score:</strong></p>\n<ul style=\"margin: 10px 0;\">\n<li><strong>✅ Puntos positivos (+):</strong>\n  <ul>\n  <li>Módulo claramente identificado: Tesorería / Pre-cancelación (APRM)</li>\n  <li>Cliente específico: CASTAÑEDA HERRERA JESUS JOEL</li>\n  <li>Monto exacto: $1,959.63 — documentado</li>\n  <li>Fecha: 27/05/2026 — producción</li>\n  <li>Resultado observable: NC (016-001-00130) + Cobro (016-C1-10021552*Z*) generados</li>\n  <li>Síntoma bien definido: \"Crédito aún muestra deuda\" — problema de matching</li>\n  <li>Evidencia: capturas de pantalla adjuntas (ventana pre-cancelación, factura cliente, cobro generado)</li>\n  </ul>\n</li>\n<li><strong>⚠️ Datos faltantes (menor impacto):</strong>\n  <ul>\n  <li>ID exacto del cliente en BD — pero nombre permite búsqueda directa</li>\n  <li>¿Hay restricción de crédito (credit hold)? — no indicado, pero se puede verificar rápidamente</li>\n  <li>¿Es la primera pre-cancelación de este cliente? — no especificado</li>\n  </ul>\n</li>\n<li><strong>✅ Lógica clara:</strong>\n  <ul>\n  <li>Proceso comenzó (generó NC y Cobro) pero no terminó (matching incompleto)</li>\n  <li>Esto apunta a: configuración / trigger / restricción de cobranza</li>\n  <li>No es bug fundamental (los documentos SÍ se generan)</li>\n  </ul>\n</li>\n</ul>\n\n<p><strong>Confianza del análisis:</strong> Alta<br>\n<strong>¿Requiere desarrollo?:</strong> Probablemente NO (problema de configuración/proceso)</p>\n\n<p style=\"background-color: #d4edda; padding: 10px; border-radius: 3px; margin-top: 15px; font-size: 10pt;\">\n<strong>Recomendación inmediata:</strong> El workaround manual es viable (aplicar el cobro manualmente a las facturas). \nLa solución permanente requiere revisar el trigger/proceso de pre-cancelación en Unnoparts.\n</p>\n\n</div>"
+      }
+    ]
+  },
+  "log_entries": [
+    {
+      "ticket_id": 5388,
+      "proyecto_glpi": "Sidesoft S.A.",
+      "repo_cliente": "N/A",
+      "estado_procesamiento": "proy_no_registrado",
+      "nivel_sla": "N/A",
+      "criticidad": "N/A",
+      "area_funcional": "Compras/Impresión",
+      "categoria_glpi": "Sin categoría",
+      "impacto": null,
+      "prioridad": null,
+      "followup_publico_id": null,
+      "followup_privado_id": null,
+      "followup_analisis_id": null,
+      "followup_score_id": null,
+      "followup_publico_solucion_id": null,
+      "score_acertividad": null,
+      "campos_ticket_actualizados": 0,
+      "respuesta_modelo_raw": "{\"motivo\": \"Proyecto no registrado en registro_clientes.json\"}",
+      "resultado": "error",
+      "detalle_error": "Project 'Sidesoft S.A.' not found in cliente registry"
+    },
+    {
+      "ticket_id": 9477,
+      "proyecto_glpi": "UNNOPARTS",
+      "repo_cliente": "unnoparts/Unnoparts-Agente-Soporte",
+      "estado_procesamiento": "ok_confianza_media",
+      "nivel_sla": "SLA Nivel 2",
+      "criticidad": "Media-Alta",
+      "area_funcional": "Logística - Guías de Remisión",
+      "categoria_glpi": "SLA Nivel 2",
+      "impacto": 2,
+      "prioridad": 3,
+      "followup_publico_id": null,
+      "followup_privado_id": "[sera-insertado]",
+      "followup_analisis_id": "[sera-insertado]",
+      "followup_score_id": "[sera-insertado]",
+      "followup_publico_solucion_id": null,
+      "score_acertividad": 75,
+      "campos_ticket_actualizados": 1,
+      "respuesta_modelo_raw": "{\"tipo\": \"Incidencia\", \"causa_raiz\": \"Configuraci\\u00f3n faltante en template Jasper\", \"modulo\": \"Log\\u00edstica/Gu\\u00edas de Remisi\\u00f3n\", \"requiere_desarrollo\": false}",
+      "resultado": "ok",
+      "detalle_error": null
+    },
+    {
+      "ticket_id": 9478,
+      "proyecto_glpi": "UNNOPARTS",
+      "repo_cliente": "unnoparts/Unnoparts-Agente-Soporte",
+      "estado_procesamiento": "ok_alta_confianza",
+      "nivel_sla": "SLA Nivel 2",
+      "criticidad": "Alta",
+      "area_funcional": "Tesorería - Pre-cancelación",
+      "categoria_glpi": "SLA Nivel 2",
+      "impacto": 3,
+      "prioridad": 2,
+      "followup_publico_id": null,
+      "followup_privado_id": "[sera-insertado]",
+      "followup_analisis_id": "[sera-insertado]",
+      "followup_score_id": "[sera-insertado]",
+      "followup_publico_solucion_id": "[sera-insertado]",
+      "score_acertividad": 82,
+      "campos_ticket_actualizados": 1,
+      "respuesta_modelo_raw": "{\"tipo\": \"Incidencia\", \"causa_raiz\": \"Matching de cobro incompleto en proceso de pre-cancelaci\\u00f3n\", \"modulo\": \"Tesorer\\u00eda/Pre-cancelaci\\u00f3n\", \"requiere_desarrollo\": true, \"workaround\": \"Aplicar cobro manualmente a facturas pendientes\"}",
+      "resultado": "ok",
+      "detalle_error": null
+    }
+  ],
+  "generated_at": "2026-07-31T22:10:19.960323"
+}
