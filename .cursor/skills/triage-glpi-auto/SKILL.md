@@ -52,9 +52,9 @@ Leer `registro_clientes/clientes.json` en la raíz del repo orquestador (lectura
 Este registro es la única fuente de verdad de qué proyectos GLPI están habilitados y a qué repo corresponde cada uno. Agregar un cliente nuevo = una entrada nueva aquí — no requiere tocar esta skill.
 
 También leer, del propio repo orquestador (conocimiento común, aplica a todos los clientes):
-- `conocimiento_comun/casos_de_uso_openbravo_erp.md`
-- `conocimiento_comun/modulos/01-Facturacion-Electronica.md` … `15-Plataforma-Configuracion.md` (detalle por módulo, ya cargados)
 - Las skills `openbravo-triage-tecnico` y `openbravo-soporte-sidesoft` (viven en `.cursor/skills/` del repo orquestador junto a esta)
+
+**⚠️ Optimización de costo — NO leer todavía los archivos de `conocimiento_comun/modulos/` ni `casos_de_uso_openbravo_erp.md` en este paso.** Son archivos grandes (varios miles de líneas cada uno); cargarlos todos en cada corrida es el mayor gasto de tokens del flujo. Se leen selectivamente, uno a la vez, recién en el Paso 4.3/5 cuando ya se identificó el módulo probable — ver nota ahí.
 
 ---
 
@@ -120,6 +120,8 @@ Usando `{owner, repo}` resuelto en el Paso 2, invocar la herramienta MCP de GitH
 - `config_agent_support/cliente.json` (reglas propias del cliente, si difieren del estándar: SLA, umbrales, etc.)
 - Archivos de customización/documentación relevantes de ese repo (ej. `customizaciones/*.md`) que ayuden al diagnóstico
 
+**Nota:** `graphify-out/` (el grafo de código) vive en el repo del CLIENTE (ej. `Unnoparts-Agente-Soporte`), no en el orquestador — es específico del código de cada instalación de Openbravo. Por eso los comandos `graphify query/path/explain` del Paso 5 solo tienen sentido una vez que el agente está operando en el contexto del cliente correcto (ya resuelto en el Paso 2).
+
 Si alguno de estos archivos no existe en ese repo, continuar el análisis solo con el conocimiento común (las skills del repo orquestador) y anotarlo en el comentario privado de análisis del Paso 6.
 
 ---
@@ -179,16 +181,34 @@ Aplicar los **5 mínimos funcionales** de `openbravo-triage-tecnico` sobre la de
 
 ## Paso 5 — Ejecutar el análisis funcional completo (motor: `openbravo-functional-ticket-analysis`)
 
+**Lectura de conocimiento — graphify primero, documentación como fallback (optimización de costo):**
+
+1. Identifica el módulo/concepto probable con la tabla de pistas de `openbravo-triage-tecnico`.
+2. Si el repo del cliente tiene `graphify-out/` (ver `graphify.mdc`), consulta el código real vía CLI:
+   - `graphify query "<módulo o concepto del ticket>"` — subgrafo acotado
+   - `graphify explain "<concepto>"` — nodos relacionados
+   - `graphify path "<A>" "<B>"` — dependencia entre dos símbolos, si aplica
+3. **Regla dura, sin excepción**: nunca leer directamente `graphify-out/graph.json` (~120 MB), `graphify-out/cache/` ni ningún archivo dentro de `cache/ast/` — son caché interno del CLI, no documentación. Toda esta información se obtiene exclusivamente vía los comandos `graphify query/path/explain`, nunca con la herramienta de lectura de archivos.
+4. Solo si el repo del cliente **no tiene** `graphify-out/` (proyecto sin grafo generado aún), cae al fallback: leer **un solo** archivo de `conocimiento_comun/modulos/{NN-modulo-identificado}.md` — nunca los 15 completos.
+5. Lee `casos_de_uso_openbravo_erp.md` solo si el diagnóstico lo requiere para citar un caso de uso concreto — no por defecto.
+
 Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, es común a todos los clientes), usando como entrada:
 - La descripción original del ticket,
 - Si se venía del camino 4.2, también la respuesta de aclaración del cliente,
 - El contexto específico del cliente leído en el Paso 3,
 - El resultado de la verificación en BD contable del Paso 3-B, si aplicó.
 
-**Enriquecimiento con las skills complementarias:**
-- En la sección de **Clasificación** (Paso 1 del motor de 9 pasos), agregar también la categoría de `openbravo-soporte-sidesoft`: FUNCIONAL / TÉCNICO / CONFIGURACIÓN / CONTABLE / CAPACITACIÓN.
-- En la sección de **Causa raíz**, usar el vocabulario de 5 categorías de `openbravo-triage-tecnico`: configuración faltante, estado del documento, restricción de negocio del sistema, dato del cliente erróneo, o bug real (último recurso).
+**Enriquecimiento con las skills complementarias — 3 campos distintos, no se fusionan:**
+- **Tipo de caso** (clasificación nativa del motor, Paso 3 de `openbravo-functional-ticket-analysis`): Operativo / Configuración / Integración / Bug / Infraestructura. Este es el campo principal que determina el manejo general del ticket.
+- **Causa raíz** (vocabulario de `openbravo-triage-tecnico`, dentro de la sección de Diagnóstico/Causa raíz del motor): configuración faltante, estado del documento, restricción de negocio del sistema, dato del cliente erróneo, o bug real (último recurso). Es un campo aparte y más granular que el Tipo de caso — no lo reemplaza ni se combina en el mismo valor.
+- **Categoría de audiencia/formato** (taxonomía de `openbravo-soporte-sidesoft`): FUNCIONAL / TÉCNICO / CONFIGURACIÓN / CONTABLE / CAPACITACIÓN. Determina el formato de la respuesta (ver Paso 3 de esa skill), no el diagnóstico en sí.
 - Citar por nombre de archivo cualquier caso de uso de `casos_de_uso_openbravo_erp.md` que aplique.
+
+**Reglas específicas de la sección §7 (respuesta al usuario final) — alineadas con `openbravo-functional-ticket-analysis.mdc`:**
+- §7 **nunca** debe incluir: SQL, sentencias UPDATE, scripts de corrección, referencias a tablas, columnas, código fuente, ni IDs técnicos. Eso va exclusivamente en las secciones 5-6 (uso del consultor/técnico) o en el comentario privado 6.3 de este flujo.
+- §7 debe incluir, cuando aplique: (1) diagnóstico en términos de negocio — qué documento/flujo se usó mal; (2) por qué está mal — naturaleza del movimiento, tipo de documento, impacto en conciliación/contabilidad; (3) qué debieron hacer — el flujo correcto en Openbravo; (4) solución operativa numerada, típicamente en el patrón revertir → recrear correctamente → conciliar/validar.
+- Si el caso es operativo (no bug de sistema): la solución principal va completa en §7. El SQL o escalamiento a desarrollo, si existe, va solo en las secciones 5-6 para el consultor — nunca en §7 ni en el comentario público 6.5.
+- Si además hay un bug de sistema real: §7 sigue siendo el flujo correcto para el usuario; el detalle técnico del bug y su escalamiento van en 5-6 / comentario privado.
 
 Producto esperado: el documento completo de 9 secciones (Clasificación, Entendimiento, Diagnóstico técnico, Causa raíz, Plan de solución, Escalamiento, **Respuesta sugerida al usuario final — §7**, Prevención, Datos faltantes), siguiendo el subtipo que corresponda (Incidencia o Viabilidad) tal como esa skill lo define.
 
@@ -294,6 +314,7 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca publicar el comentario de solución (6.5) si el score de acertividad es 70 o menor.
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
+- Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/` — usar solo los comandos `graphify query/path/explain`.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
 - Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT`, con filtros y `LIMIT` en tablas de alto volumen.
@@ -312,3 +333,13 @@ ALTER TABLE sidesoft_triage_glpi_log
   ADD COLUMN followup_publico_solucion_id INT NULL,
   ADD COLUMN score_acertividad INT NULL;
 ```
+
+---
+
+## Optimización de costo (importante — revisar antes de dejarlo corriendo sin supervisión)
+
+1. **graphify primero, documentación completa como último recurso.** Si el repo del cliente tiene `graphify-out/`, usar siempre `graphify query/path/explain` para entender el código real — nunca cargar los 15 archivos de `conocimiento_comun/modulos/` de una vez, y ni siquiera uno completo si graphify ya resuelve la duda.
+2. **Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/`** — son caché interno (cientos de MB), no contenido para leer con la herramienta de archivos. Un solo intento de leer `graph.json` puede costar más que toda una corrida normal.
+3. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y 6.4 (score) necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
+4. **No releer archivos estáticos que no cambian entre corridas** (`registro_clientes/clientes.json`, `config_agent_support/cliente.json` del cliente) más de una vez por sesión de análisis del lote de tickets — resuélvelos una vez al inicio de la corrida y reutilízalos para todos los tickets de esa misma ejecución, no por ticket.
+5. **Evita llamadas MCP redundantes**: si dos tickets de la misma corrida resuelven al mismo cliente, no repitas la lectura del contexto del Paso 3 — reutiliza lo ya leído en esa corrida.
