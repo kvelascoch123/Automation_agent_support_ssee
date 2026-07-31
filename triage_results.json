@@ -1,0 +1,53 @@
+[
+  {
+    "ticket_id": 5388,
+    "titulo": "KV - Error en impresion de pedido de compra (9524)",
+    "proyecto": "Sidesoft S.A.",
+    "solicitante": "DCAZA",
+    "timestamp": "2026-07-31T22:08:10.426054",
+    "estado_procesamiento": "proy_no_registrado",
+    "contexto_suficiente": false,
+    "contexto_count": 0,
+    "missing_minimums": [],
+    "owner": null,
+    "repo": null,
+    "analysis": null,
+    "error": "Project 'Sidesoft S.A.' not found in registro_clientes"
+  },
+  {
+    "ticket_id": 9477,
+    "titulo": "KV - CL - Guia de remisión",
+    "proyecto": "UNNOPARTS",
+    "solicitante": "kvelasco",
+    "timestamp": "2026-07-31T22:08:10.426163",
+    "estado_procesamiento": "listo_analisis",
+    "contexto_suficiente": true,
+    "contexto_count": 5,
+    "missing_minimums": [],
+    "owner": "unnoparts",
+    "repo": "Unnoparts-Agente-Soporte",
+    "analysis": {
+      "modulo_probable": "Logística/Guías",
+      "descripcion_limpia": "a. Descripción del Error o Solicitud Se solicita revisar el proceso de generación de la Guía de Remisión Manual en Openbravo, debido a que la información generada en el documento no corresponde comple..."
+    },
+    "error": null
+  },
+  {
+    "ticket_id": 9478,
+    "titulo": "KV - CL - RV: ERROR EN PRECANCELACION",
+    "proyecto": "UNNOPARTS",
+    "solicitante": "kvelasco",
+    "timestamp": "2026-07-31T22:08:10.426242",
+    "estado_procesamiento": "listo_analisis",
+    "contexto_suficiente": true,
+    "contexto_count": 5,
+    "missing_minimums": [],
+    "owner": "unnoparts",
+    "repo": "Unnoparts-Agente-Soporte",
+    "analysis": {
+      "modulo_probable": "Tesorería/Cobros",
+      "descripcion_limpia": "El cliente CASTAÑEDA HERRERA JESUS JOEL precancelo la totalidad de su crédito el día 27/05/2026 con el valor de $1,959.63, se aplico el valor desde la ventana de precancelacion y como se puede observa..."
+    },
+    "error": null
+  }
+]
