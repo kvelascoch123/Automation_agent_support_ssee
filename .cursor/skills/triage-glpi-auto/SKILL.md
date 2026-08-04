@@ -220,7 +220,7 @@ Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, 
 **Reglas específicas de la sección §7 (respuesta al usuario final) — alineadas con `openbravo-functional-ticket-analysis.mdc`:**
 - §7 **nunca** debe incluir: SQL, sentencias UPDATE, scripts de corrección, referencias a tablas, columnas, código fuente, ni IDs técnicos. Eso va exclusivamente en las secciones 5-6 (uso del consultor/técnico) o en el comentario privado 6.3 de este flujo.
 - §7 debe incluir, cuando aplique: (1) diagnóstico en términos de negocio — qué documento/flujo se usó mal; (2) por qué está mal — naturaleza del movimiento, tipo de documento, impacto en conciliación/contabilidad; (3) qué debieron hacer — el flujo correcto en Openbravo; (4) solución operativa numerada, típicamente en el patrón revertir → recrear correctamente → conciliar/validar.
-- Si el caso es operativo (no bug de sistema): la solución principal va completa en §7. El SQL o escalamiento a desarrollo, si existe, va solo en las secciones 5-6 para el consultor — nunca en §7 ni en el comentario público 6.5.
+- Si el caso es operativo (no bug de sistema): la solución principal va completa en §7. El SQL o escalamiento a desarrollo, si existe, va solo en las secciones 5-6 para el consultor — nunca en §7 ni en el comentario de solución 6.3.
 - Si además hay un bug de sistema real: §7 sigue siendo el flujo correcto para el usuario; el detalle técnico del bug y su escalamiento van en 5-6 / comentario privado.
 
 Producto esperado: el documento completo de 9 secciones (Clasificación, Entendimiento, Diagnóstico técnico, Causa raíz, Plan de solución, Escalamiento, **Respuesta sugerida al usuario final — §7**, Prevención, Datos faltantes), siguiendo el subtipo que corresponda (Incidencia o Viabilidad) tal como esa skill lo define.
@@ -231,27 +231,12 @@ Producto esperado: el documento completo de 9 secciones (Clasificación, Entendi
 
 Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.glpi`. **Todos los comentarios de este flujo se publican con `is_private = 1` — ninguno es visible para el solicitante/cliente en GLPI.**
 
-### 6.1 — Comentario privado: primer contacto
-```sql
-INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
-VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_primer_contacto}', 1, 0, NOW(), NOW(), 1);
-```
+**Cambio: ya no se publica comentario de "primer contacto".** El flujo pasa directo del análisis al comentario de SLA+Score. Quedan 3 comentarios en total (antes eran 5).
 
-### 6.2 — Comentario privado: SLA / criticidad
-```sql
-INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
-VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_html}', 1, 0, NOW(), NOW(), 1);
-```
+### 6.1 — Comentario privado: SLA/criticidad + score de acertividad (fusionado)
+Un solo `INSERT` que combina ambos contenidos — nivel SLA, criticidad, área funcional, tiempo estimado, **y** el score de acertividad de la §7 con su justificación, todo en el mismo comentario.
 
-### 6.3 — Comentario privado: detalle completo de los 9 pasos
-Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo.
-```sql
-INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
-VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
-```
-
-### 6.4 — Comentario privado: score de acertividad (0–100)
-Evaluar **exclusivamente la sección §7** del análisis del Paso 5, y asignar un puntaje 0–100:
+Evaluar el score exclusivamente sobre la sección §7 del análisis del Paso 5, con estos rangos:
 
 | Rango | Criterio |
 |---|---|
@@ -262,17 +247,26 @@ Evaluar **exclusivamente la sección §7** del análisis del Paso 5, y asignar u
 
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
-VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_score_acertividad}', 1, 0, NOW(), NOW(), 1);
+VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}', 1, 0, NOW(), NOW(), 1);
 ```
 
-### 6.5 — Comentario privado (condicional): solo si score > 70
+`{comentario_sla_y_score_html}` incluye, en un solo bloque: Nivel SLA · Criticidad · Área funcional · Tiempo estimado de revisión inicial · Score de acertividad (0-100) · Justificación del rango.
+
+### 6.2 — Comentario privado: detalle completo de los 9 pasos
+Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo.
+```sql
+INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
+VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
+```
+
+### 6.3 — Comentario privado (condicional): solo si score > 70
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
 Si el score es 70 o menor, no publicar este comentario.
 
-### 6.6 — Actualizar campos del ticket — nunca incluir `status`
+### 6.4 — Actualizar campos del ticket — nunca incluir `status`
 ```sql
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
@@ -283,7 +277,7 @@ WHERE id = {ticket_id};
 **Nota sobre notificación al solicitante**: el INSERT directo en `glpi_itilfollowups` no dispara el correo de notificación de GLPI. Pendiente de confirmar si la API REST está habilitada para ese caso.
 
 ### 6-B — Si el análisis produjo un script SQL correctivo sobre el ERP del cliente
-Siguiendo la regla dura de `openbravo-triage-tecnico` para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.3** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
+Siguiendo la regla dura de `openbravo-triage-tecnico` para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
 
 ```
 ⚠️ Script sugerido — requiere revisión y ejecución manual de un técnico.
@@ -300,15 +294,15 @@ Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GL
 INSERT INTO sidesoft_triage_glpi_log
   (ticket_id, proyecto_glpi, repo_cliente, estado_procesamiento, nivel_sla, criticidad, area_funcional,
    categoria_glpi, impacto, prioridad,
-   followup_publico_id, followup_privado_id,
-   followup_analisis_id, followup_score_id, followup_publico_solucion_id,
+   followup_sla_score_id,
+   followup_analisis_id, followup_publico_solucion_id,
    score_acertividad, campos_ticket_actualizados,
    respuesta_modelo_raw, resultado, detalle_error)
 VALUES
   ({ticket_id}, '{proyecto}', '{owner}/{repo}', '{estado_procesamiento}', '{nivel_sla}', '{criticidad}', '{area_funcional}',
    '{categoria_glpi}', '{impacto}', '{prioridad}',
-   {followup_publico_id_o_null}, {followup_privado_id_o_null},
-   {followup_analisis_id_o_null}, {followup_score_id_o_null}, {followup_publico_solucion_id_o_null},
+   {followup_sla_score_id_o_null},
+   {followup_analisis_id_o_null}, {followup_publico_solucion_id_o_null},
    {score_acertividad_o_null}, {1_o_0},
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
@@ -324,7 +318,7 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
-- Nunca publicar el comentario de solución (6.5) si el score de acertividad es 70 o menor.
+- Nunca publicar el comentario de solución (6.3) si el score de acertividad es 70 o menor.
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/` — usar solo los comandos `graphify query/path/explain`.
@@ -341,8 +335,8 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 ALTER TABLE sidesoft_triage_glpi_log
   ADD COLUMN proyecto_glpi VARCHAR(255) NULL,
   ADD COLUMN repo_cliente VARCHAR(255) NULL,
+  ADD COLUMN followup_sla_score_id INT NULL,
   ADD COLUMN followup_analisis_id INT NULL,
-  ADD COLUMN followup_score_id INT NULL,
   ADD COLUMN followup_publico_solucion_id INT NULL,
   ADD COLUMN score_acertividad INT NULL;
 ```
@@ -354,6 +348,6 @@ ALTER TABLE sidesoft_triage_glpi_log
 1. **graphify primero, documentación completa como último recurso.** Si el repo del cliente tiene `graphify-out/`, usar siempre `graphify query/path/explain` para entender el código real — nunca cargar los 15 archivos de `conocimiento_comun/modulos/` de una vez, y ni siquiera uno completo si graphify ya resuelve la duda.
 2. **Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/`** — son caché interno (cientos de MB), no contenido para leer con la herramienta de archivos. Un solo intento de leer `graph.json` puede costar más que toda una corrida normal.
 3. **Limpiar HTML e imágenes base64 en el SQL del Paso 1, no en el razonamiento del agente** — un solo pantallazo embebido como base64 puede costar decenas de miles de tokens de puro ruido; ver el detalle en el Paso 1.
-4. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y 6.4 (score) necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
+4. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y el score dentro de 6.1 necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
 5. **No releer archivos estáticos que no cambian entre corridas** (`registro_clientes/clientes.json`, `config_agent_support/cliente.json` del cliente) más de una vez por sesión de análisis del lote de tickets — resuélvelos una vez al inicio de la corrida y reutilízalos para todos los tickets de esa misma ejecución, no por ticket.
 6. **Evita llamadas MCP redundantes**: si dos tickets de la misma corrida resuelven al mismo cliente, no repitas la lectura del contexto del Paso 3 — reutiliza lo ya leído en esa corrida.
