@@ -153,7 +153,17 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 ## Paso 4 — Determinar en qué punto del flujo está el ticket
 
-Evaluar en este orden, usando el historial de followups leído en el Paso 1:
+Evaluar en este orden, usando el historial de followups leído en el Paso 1 **y** el último registro de `sidesoft_triage_glpi_log` (si existe):
+
+### 4.0 — Idempotencia (evitar reprocesar en cada cron)
+Antes de 4.1, revisar followups del bot (`users_id = 148`) y el último `estado_procesamiento` del log:
+
+- Si existen marcadores `[TRIAGE-ANALISIS-9PASOS]` **y** `[TRIAGE-SCORE]` en followups del ticket → **no re-publicar** análisis/score/solución. Registrar en log solo si hace falta reconciliar un hueco (p. ej. falta `[TRIAGE-SLA]` → publicar únicamente ese comentario). Estado: reutilizar `ok_alta_confianza` / `ok_baja_confianza` según el score ya registrado.
+- Si el último log es `proy_no_registrado` / `proyecto_no_registrado` **y** ya existe followup `[TRIAGE-PROYECTO-NO-REGISTRADO]` → no re-publicar; terminar el ticket en esta corrida (opcional: una fila de log `proy_no_registrado` con nota `skip_idempotent`).
+- Si el log dice `ok_*` pero **faltan** los followups de análisis/score en GLPI (IDs huérfanos o borrados) → **reprocesar** desde 4.1 / Paso 5 y publicar de nuevo.
+- Si hay `[TRIAGE-ACLARACION]` sin respuesta → 4.2 como siempre (`esp_resp_cliente`).
+
+Valores cortos de `estado_procesamiento` (columna `varchar(20)`): `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `ok_alta_confianza`, `ok_baja_confianza`, `error`.
 
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
