@@ -64,9 +64,15 @@ Vía MCP-DB (alias `glpi`).
 
 **Importante:** el proyecto GLPI no se vincula al ticket — se vincula al **solicitante**, vía el campo plugin `glpi_plugin_fields_userproyectorelacionadousers`. El filtro de proyecto se hace a través del join con el solicitante (`tu.users_id`), no con el ticket directamente. Esto también cubre el caso de varios solicitantes distintos dentro del mismo proyecto: cualquiera de ellos que tenga el proyecto asignado en su perfil queda incluido automáticamente.
 
+**⚠️ Optimización de costo — limpieza de HTML e imágenes embebidas, SIEMPRE en el SQL, nunca en el razonamiento del agente.** El campo `content` de GLPI es HTML enriquecido, y por un comportamiento conocido de GLPI, las imágenes pegadas por el usuario a veces quedan embebidas como `<img src="data:image/...;base64,...">` directamente en ese campo — un solo pantallazo puede agregar decenas de miles de tokens de texto base64 inútil. Nunca dejes que el agente reciba el HTML crudo y lo "limpie" razonando — eso ya gastó los tokens. La limpieza va en la consulta misma:
+
 ```sql
 SELECT
-  t.id AS ticket_id, t.name AS titulo, t.content AS descripcion_html,
+  t.id AS ticket_id, t.name AS titulo,
+  REGEXP_REPLACE(
+    REGEXP_REPLACE(t.content, '<img[^>]*src="data:image[^"]*"[^>]*>', '[imagen adjunta — omitida]'),
+    '<[^>]+>', ''
+  ) AS descripcion_limpia,
   u.name AS solicitante, tu.users_id AS solicitante_id,
   COALESCE(c.name,'Sin categoría') AS categoria,
   t.date AS fecha_apertura,
@@ -86,17 +92,24 @@ WHERE t.status = 1
   AND t.id IN (9477, 9478, 5388);  -- whitelist de prueba, temporal — quitar esta línea cuando se libere a producción
 ```
 
+`REGEXP_REPLACE` requiere MySQL 8.0+. Si el servidor es una versión anterior sin esta función, avisar — en ese caso el reemplazo de base64 tendría que hacerse con una combinación de `SUBSTRING_INDEX`/`LOCATE`, o aceptar que la limpieza de imágenes quede pendiente hasta actualizar el motor.
+
+**Si la imagen es relevante para el diagnóstico** (ej. pantallazo de un error): no se reintroduce el base64 como texto. Se revisa si el documento quedó también registrado en `glpi_documents_items` (vinculado al ticket) y, solo si hace falta verla, se descarga como archivo de imagen real para pasarla a una herramienta de visión — nunca como parte del string SQL ni del prompt de texto.
+
 Si un solicitante puede tener **más de un proyecto asignado** en el campo plugin (multi-selección), avisar para cambiar el `REPLACE` por una comparación tipo `FIND_IN_SET` — tal como está, asume un solo valor por campo.
 
-Para cada ticket obtenido, traer también su historial de followups:
+Para cada ticket obtenido, traer también su historial de followups, con la misma limpieza:
 ```sql
-SELECT id, users_id, content, is_private, date_creation
+SELECT id, users_id,
+  REGEXP_REPLACE(
+    REGEXP_REPLACE(content, '<img[^>]*src="data:image[^"]*"[^>]*>', '[imagen adjunta — omitida]'),
+    '<[^>]+>', ''
+  ) AS contenido_limpio,
+  is_private, date_creation
 FROM glpi_itilfollowups
 WHERE items_id = {ticket_id} AND itemtype = 'Ticket'
 ORDER BY date_creation ASC;
 ```
-
-Limpiar el HTML de `descripcion_html` y de cada `content` (quitar tags, decodificar entidades) antes de analizar.
 
 Si existe la tabla `sidesoft_triage_glpi_log`, revisar el último registro por `ticket_id` para saber en qué punto del flujo quedó ese ticket (ver Paso 4).
 
@@ -340,6 +353,7 @@ ALTER TABLE sidesoft_triage_glpi_log
 
 1. **graphify primero, documentación completa como último recurso.** Si el repo del cliente tiene `graphify-out/`, usar siempre `graphify query/path/explain` para entender el código real — nunca cargar los 15 archivos de `conocimiento_comun/modulos/` de una vez, y ni siquiera uno completo si graphify ya resuelve la duda.
 2. **Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/`** — son caché interno (cientos de MB), no contenido para leer con la herramienta de archivos. Un solo intento de leer `graph.json` puede costar más que toda una corrida normal.
-3. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y 6.4 (score) necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
-4. **No releer archivos estáticos que no cambian entre corridas** (`registro_clientes/clientes.json`, `config_agent_support/cliente.json` del cliente) más de una vez por sesión de análisis del lote de tickets — resuélvelos una vez al inicio de la corrida y reutilízalos para todos los tickets de esa misma ejecución, no por ticket.
-5. **Evita llamadas MCP redundantes**: si dos tickets de la misma corrida resuelven al mismo cliente, no repitas la lectura del contexto del Paso 3 — reutiliza lo ya leído en esa corrida.
+3. **Limpiar HTML e imágenes base64 en el SQL del Paso 1, no en el razonamiento del agente** — un solo pantallazo embebido como base64 puede costar decenas de miles de tokens de puro ruido; ver el detalle en el Paso 1.
+4. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y 6.4 (score) necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
+5. **No releer archivos estáticos que no cambian entre corridas** (`registro_clientes/clientes.json`, `config_agent_support/cliente.json` del cliente) más de una vez por sesión de análisis del lote de tickets — resuélvelos una vez al inicio de la corrida y reutilízalos para todos los tickets de esa misma ejecución, no por ticket.
+6. **Evita llamadas MCP redundantes**: si dos tickets de la misma corrida resuelven al mismo cliente, no repitas la lectura del contexto del Paso 3 — reutiliza lo ya leído en esa corrida.
