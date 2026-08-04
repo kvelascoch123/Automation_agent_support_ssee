@@ -155,6 +155,14 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (antes de re-publicar análisis)
+Buscar followups del bot (`users_id = 148`) con los marcadores `[TRIAGE-SCORE]` y `[TRIAGE-ANALISIS-9PASOS]` en el mismo ticket.
+
+- **Ambos existen** → el ticket ya fue analizado en una corrida previa. Registrar en el log `estado_procesamiento = 'ok_alta_confianza'` o `ok_baja_confianza` según el score ya publicado (si se puede leer) o reutilizar el último log, y **no publicar comentarios nuevos**.
+- **Log dice ok_* pero faltan esos followups (huérfanos)** → reprocesar completo (Paso 4.3/5/6): el log no sustituye la evidencia en `glpi_itilfollowups`.
+- **Existe `[TRIAGE-PROYECTO-NO-REGISTRADO]`** y el proyecto sigue ausente del registro → registrar `proy_no_registrado` y no republicar.
+- Si solo existe uno de los dos marcadores de análisis, completar lo faltante sin duplicar el que ya está.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
