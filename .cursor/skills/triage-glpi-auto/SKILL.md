@@ -153,7 +153,17 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 ## Paso 4 — Determinar en qué punto del flujo está el ticket
 
-Evaluar en este orden, usando el historial de followups leído en el Paso 1:
+Evaluar en este orden, usando el historial de followups leído en el Paso 1 y el último registro de `sidesoft_triage_glpi_log` (si existe):
+
+### 4.0 — ¿Ya fue analizado / cerrado en una corrida anterior? (idempotencia cron)
+Antes de 4.1, revisar:
+
+1. Último `estado_procesamiento` en `sidesoft_triage_glpi_log` para ese `ticket_id`, **o**
+2. Followups del bot (`users_id = 148`) con marcadores `[TRIAGE-SCORE]` / `[TRIAGE-ANALISIS-9PASOS]` / `[TRIAGE-PROYECTO-NO-REGISTRADO]`.
+
+- Si el log dice `ok_alta_confianza`, `ok_baja_confianza` o `proy_no_registrado` (o el equivalente abreviado si `estado_procesamiento` es `varchar(20)`), **y** no hay followup nuevo del solicitante posterior a ese análisis → **no republicar comentarios**. Solo registrar en el log de esta corrida (mismo estado, `resultado = 'ok'`, detalle `"idempotent_skip"`) y pasar al siguiente ticket.
+- Si existen marcadores `[TRIAGE-SCORE]` + `[TRIAGE-ANALISIS-9PASOS]` aunque el log esté vacío (corrida previa sin log) → tratar igual: **idempotent_skip**, escribir el log faltante una sola vez con los IDs de followup ya existentes, y no insertar comentarios duplicados.
+- Si el log dice `preguntas_enviadas` o `esp_resp_cliente` → ir a 4.1/4.2 (no es cierre final).
 
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
@@ -308,6 +318,10 @@ VALUES
 ```
 
 Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
+
+**⚠️ Longitud de columna en producción:** si `estado_procesamiento` es `varchar(20)`, usar abreviaciones ≤20 caracteres: `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `ok_alta_confianza`, `ok_baja_confianza`, `error`. Preferir ampliar la columna a `varchar(40)` cuando haya permiso DDL.
+
+**⚠️ Permisos MCP-DB (`glpi`):** en el entorno actual solo se permiten `SELECT` e `INSERT`. `UPDATE`/`DDL` sobre `glpidb` fallan. Por tanto el Paso 6.6 (UPDATE de impacto/prioridad/categoría del ticket) y el `ALTER` de columnas nuevas pueden no ejecutarse automáticamente; si `UPDATE` no está disponible, dejar constancia en el log (`campos_ticket_actualizados = 0`) y no reintentar en bucle.
 
 ---
 
