@@ -155,6 +155,23 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (evitar re-publicar en corridas cron)
+
+Antes de 4.1, revisar followups del bot (`users_id = 148`) y el último registro en `sidesoft_triage_glpi_log` para ese `ticket_id`:
+
+1. Si existe un followup que inicie con `[TRIAGE-SCORE]` **y** otro con `[TRIAGE-ANALISIS-9PASOS]` → el ticket ya fue analizado en una corrida previa. Registrar `estado_procesamiento = 'skip_idempotent'` y **no publicar ningún comentario nuevo**.
+2. Si no hay marcadores, pero el último log es `ok_alta_confianza` / `ok_baja_confianza` **y** aún existen los followups de score+análisis referenciados (o followups del bot con "Score de acertividad" + sección "1. Clasificación") → igual `skip_idempotent`, sin republicar.
+3. Si el último log es `proy_no_registrado` (o `proyecto_no_registrado`) y ya hay followup `[TRIAGE-PROYECTO-NO-REGISTRADO]` → `skip_idempotent`.
+4. Si el último log es `preguntas_enviadas` o `esp_resp_cliente` → no aplicar skip aquí; continuar a 4.1/4.2 (pueden estar esperando respuesta).
+5. Si el log afirma un estado terminal pero los followups están ausentes/huérfanos → **reprocesar** (no saltar).
+
+Marcadores obligatorios al publicar (Paso 6):
+- `[TRIAGE-SCORE]` al inicio del comentario 6.1
+- `[TRIAGE-ANALISIS-9PASOS]` al inicio del comentario 6.2
+- `[TRIAGE-SOLUCION]` al inicio del comentario 6.3 (si aplica)
+- `[TRIAGE-PROYECTO-NO-REGISTRADO]` si se deja constancia privada de proyecto no habilitado
+- `[TRIAGE-ACLARACION]` ya definido en 4.4
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
@@ -307,7 +324,7 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
-Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
+Valores posibles de `estado_procesamiento` (respetar límite varchar(20) de la columna): `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `skip_idempotent`, `error`.
 
 ---
 
