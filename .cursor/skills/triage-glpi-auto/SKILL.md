@@ -155,6 +155,17 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (evitar republicar)
+Antes de 4.1, revisar followups del bot (`users_id = 148`):
+
+- Si existen comentarios con marcadores `[TRIAGE-SCORE]` **y** `[TRIAGE-ANALISIS-9PASOS]` → el ticket ya fue analizado y publicado. Registrar en log `estado_procesamiento = 'skip_idempotent'` y **no publicar** comentarios nuevos. Terminar este ticket.
+- Si existe `[TRIAGE-ACLARACION]` sin respuesta posterior del solicitante → ir a 4.2 (quedará en espera; no repetir preguntas).
+- Si existe `[TRIAGE-PROYECTO-NO-REGISTRADO]` → registrar `proy_no_registrado` / `skip_idempotent` y no republicar.
+- Si hay followups de triage **sin** esos marcadores (corridas antiguas) pero el último log es `ok_alta_confianza` con `followup_*_id` poblados y los followups referenciados aún existen → `skip_idempotent`.
+- En cualquier otro caso (sin publicación completa, followups huérfanos, o solo análisis de baja calidad sin evidencia de módulo/código) → continuar el flujo normal. Al publicar, **usar siempre** los marcadores `[TRIAGE-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, `[TRIAGE-SOLUCION]` (y `[TRIAGE-ACLARACION]` / `[TRIAGE-PROYECTO-NO-REGISTRADO]` cuando aplique) al inicio del contenido HTML.
+
+> **Nota de longitud**: `sidesoft_triage_glpi_log.estado_procesamiento` es `varchar(20)`. Usar abreviaturas cuando haga falta: `proy_no_registrado`, `esp_resp_cliente`, `preguntas_enviadas`, `ok_alta_confianza`, `ok_baja_confianza`, `skip_idempotent`, `error`.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
@@ -234,7 +245,7 @@ Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.gl
 **Cambio: ya no se publica comentario de "primer contacto".** El flujo pasa directo del análisis al comentario de SLA+Score. Quedan 3 comentarios en total (antes eran 5).
 
 ### 6.1 — Comentario privado: SLA/criticidad + score de acertividad (fusionado)
-Un solo `INSERT` que combina ambos contenidos — nivel SLA, criticidad, área funcional, tiempo estimado, **y** el score de acertividad de la §7 con su justificación, todo en el mismo comentario.
+Un solo `INSERT` que combina ambos contenidos — nivel SLA, criticidad, área funcional, tiempo estimado, **y** el score de acertividad de la §7 con su justificación, todo en el mismo comentario. El HTML **debe iniciar** con el marcador literal `[TRIAGE-SCORE]`.
 
 Evaluar el score exclusivamente sobre la sección §7 del análisis del Paso 5, con estos rangos:
 
@@ -253,13 +264,14 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}',
 `{comentario_sla_y_score_html}` incluye, en un solo bloque: Nivel SLA · Criticidad · Área funcional · Tiempo estimado de revisión inicial · Score de acertividad (0-100) · Justificación del rango.
 
 ### 6.2 — Comentario privado: detalle completo de los 9 pasos
-Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo.
+Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo. El HTML **debe iniciar** con el marcador literal `[TRIAGE-ANALISIS-9PASOS]`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
 ```
 
 ### 6.3 — Comentario privado (condicional): solo si score > 70
+El HTML **debe iniciar** con el marcador literal `[TRIAGE-SOLUCION]`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
