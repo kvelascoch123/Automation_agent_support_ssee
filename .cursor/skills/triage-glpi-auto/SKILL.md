@@ -155,6 +155,21 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (evitar republicar análisis ya cerrado)
+Buscar entre los followups del bot (`users_id = 148`) los marcadores:
+- `[TRIAGE-SCORE]`
+- `[TRIAGE-ANALISIS-9PASOS]`
+
+Si **ambos** existen → el ticket ya fue analizado en una corrida previa. Registrar en el log `estado_procesamiento = 'skip_idempotent'` (o el estado previo `ok_alta_confianza` / `ok_baja_confianza` si se reconfirma) **sin publicar comentarios nuevos** y pasar al siguiente ticket.
+
+Excepciones que **sí** permiten reprocesar:
+- Los followups referenciados en el log ya no existen (huérfanos) → reprocesar completo.
+- Solo existe análisis de baja calidad **sin** marcadores y se dispone de evidencia de código nueva que eleva el score — reprocesar publicando nuevos followups **con marcadores**.
+
+Marcadores a usar al publicar (Paso 6): prefijo literal `[TRIAGE-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, `[TRIAGE-SOLUCION]`, `[TRIAGE-ACLARACION]`, `[TRIAGE-PROYECTO-NO-REGISTRADO]`.
+
+Si el proyecto no está en `clientes.json` y ya existe un followup `[TRIAGE-PROYECTO-NO-REGISTRADO]` o log previo `proy_no_registrado` → `skip_idempotent`, sin nuevo comentario.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
@@ -307,7 +322,7 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
-Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
+Valores posibles de `estado_procesamiento` (varchar(20) en BD — usar abreviaturas si hace falta): `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `skip_idempotent`, `error`.
 
 ---
 
