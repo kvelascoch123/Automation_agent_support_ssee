@@ -153,7 +153,18 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 ## Paso 4 — Determinar en qué punto del flujo está el ticket
 
-Evaluar en este orden, usando el historial de followups leído en el Paso 1:
+Evaluar en este orden, usando el historial de followups leído en el Paso 1 **y** el último registro de `sidesoft_triage_glpi_log` para ese `ticket_id`:
+
+### 4.0 — Idempotencia (ya procesado en una corrida anterior)
+Si el historial de followups del bot (`users_id = 148`) ya contiene un comentario con marcador `[TRIAGE-SCORE]` **y** uno con `[TRIAGE-ANALISIS-9PASOS]`, **o** el último log del ticket es `ok_alta_confianza` / `ok_baja_confianza` y existen followups de análisis del bot posteriores a esa corrida:
+
+- No republicar comentarios 6.1 / 6.2 / 6.3.
+- Registrar en el log el mismo `estado_procesamiento` previo (o el vigente) con `respuesta_modelo_raw` indicando `"skip_idempotent": true`.
+- Terminar el procesamiento de este ticket en esta corrida.
+
+Si el último log es `proy_no_registrado` (o `proyecto_no_registrado`) y ya existe un followup `[TRIAGE-PROYECTO-NO-REGISTRADO]`, no republicar: solo registrar skip idempotente.
+
+Si el último log es `preguntas_enviadas` o `esp_resp_cliente` / `esperando_respuesta_cliente`, **no** aplicar 4.0 — continuar en 4.1/4.2.
 
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
