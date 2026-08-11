@@ -155,6 +155,18 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (antes de cualquier publicación nueva)
+Buscar followups del bot (`users_id = 148`) con marcadores o contenido equivalente:
+
+| Señal | Acción |
+|---|---|
+| Existe comentario SLA/score **y** comentario de análisis 9 pasos (marcadores `[TRIAGE-SCORE]` / `[TRIAGE-ANALISIS-9PASOS]`, o equivalentes reconocibles) | **No republicar**. Registrar en log `estado_procesamiento = 'skip_idempotente'` (≤20 chars) y terminar ese ticket. |
+| Existe `[TRIAGE-PROYECTO-NO-REGISTRADO]` o log previo `proy_no_registrado` para el mismo proyecto no habilitado | **No republicar**. Log `skip_idempotente` (o re-log `proy_no_registrado` si se quiere trazar la corrida) y terminar. |
+| Existe `[TRIAGE-ACLARACION]` sin respuesta posterior del solicitante | Ir a 4.2 → `esp_resp_cliente` (abreviado de `esperando_respuesta_cliente`, límite varchar(20)). |
+| Log dice procesado pero **no hay** followups reales en GLPI (huérfanos / borrados) | **Reprocesar** de cero — la memoria o el log no sustituyen evidencia en `glpi_itilfollowups`. |
+
+**Nota de esquema**: `sidesoft_triage_glpi_log.estado_procesamiento` es `varchar(20)`. Usar abreviaturas: `proy_no_registrado`, `esp_resp_cliente`, `skip_idempotente`, `ok_alta_confianza`, `ok_baja_confianza`, `preguntas_enviadas`, `error`.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
@@ -307,7 +319,7 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
-Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
+Valores posibles de `estado_procesamiento` (**máx. 20 caracteres** en BD): `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `skip_idempotente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
 
 ---
 
