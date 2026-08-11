@@ -155,6 +155,17 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (evitar republicar)
+Antes de 4.1, revisar followups del bot (`users_id = 148`):
+
+- Si existen comentarios con marcadores `[TRIAGE-SCORE]` **y** `[TRIAGE-ANALISIS-9PASOS]` → el ticket ya fue analizado y publicado. Registrar en log `estado_procesamiento = 'skip_idempotent'` y **no publicar** comentarios nuevos. Terminar este ticket.
+- Si existe `[TRIAGE-ACLARACION]` sin respuesta posterior del solicitante → ir a 4.2 (quedará en espera; no repetir preguntas).
+- Si existe `[TRIAGE-PROYECTO-NO-REGISTRADO]` → registrar `proy_no_registrado` / `skip_idempotent` y no republicar.
+- Si hay followups de triage **sin** esos marcadores (corridas antiguas) pero el último log es `ok_alta_confianza` con `followup_*_id` poblados y los followups referenciados aún existen → `skip_idempotent`.
+- En cualquier otro caso (sin publicación completa, followups huérfanos, o solo análisis de baja calidad sin evidencia de módulo/código) → continuar el flujo normal. Al publicar, **usar siempre** los marcadores `[TRIAGE-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, `[TRIAGE-SOLUCION]` (y `[TRIAGE-ACLARACION]` / `[TRIAGE-PROYECTO-NO-REGISTRADO]` cuando aplique) al inicio del contenido HTML.
+
+> **Nota de longitud**: `sidesoft_triage_glpi_log.estado_procesamiento` es `varchar(20)`. Usar abreviaturas cuando haga falta: `proy_no_registrado`, `esp_resp_cliente`, `preguntas_enviadas`, `ok_alta_confianza`, `ok_baja_confianza`, `skip_idempotent`, `error`.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
