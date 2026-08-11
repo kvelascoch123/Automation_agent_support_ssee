@@ -155,6 +155,14 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 Evaluar en este orden, usando el historial de followups leído en el Paso 1:
 
+### 4.0 — Idempotencia (evitar republicar análisis ya cerrado)
+Antes de 4.1, revisar followups del bot (`users_id = 148`) con estos marcadores:
+
+- `[TRIAGE-SCORE]` + `[TRIAGE-ANALISIS-9PASOS]` presentes → el ticket ya fue analizado en una corrida previa. Registrar en el log `estado_procesamiento = 'skip_idempotent'` (o el estado previo `ok_alta_confianza` / `ok_baja_confianza` si se desea conservar) y **no publicar comentarios nuevos**.
+- Excepción: si el análisis previo quedó en `ok_baja_confianza` **sin** evidencia de módulo/código (sin marcadores o sin citar archivo de función/clase) y la corrida actual **sí** obtuvo evidencia directa (graphify o lectura selectiva del repo del cliente), se permite **reprocesar una vez** publicando nuevos comentarios con marcadores. No reprocesar en bucle en cada cron.
+- `[TRIAGE-PROYECTO-NO-REGISTRADO]` presente y proyecto sigue ausente del registro → `skip_idempotent` / `proy_no_registrado`, sin republicar.
+- Si la memoria o el log afirman followups que **no existen** en GLPI (huérfanos) → **reprocesar** (no confiar solo en memoria).
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
