@@ -322,7 +322,7 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
-Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `error`.
+Valores posibles de `estado_procesamiento` (varchar(20) en BD — usar abreviaturas si hace falta): `proy_no_registrado`, `preguntas_enviadas`, `esp_resp_cliente`, `ok_alta_confianza` (score > 70), `ok_baja_confianza` (score ≤ 70), `skip_idempotent`, `error`.
 
 ---
 
