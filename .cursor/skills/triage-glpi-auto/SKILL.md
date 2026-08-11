@@ -334,7 +334,10 @@ Valores posibles de `estado_procesamiento` (respetar límite varchar(20) de la c
 - Nunca modificar `status`.
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
+- Nunca republicar análisis/score/solución si aplica skip por Paso 4.0 (idempotencia).
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
+- Al publicar comentarios de Paso 6 / 4.4 / proyecto no registrado, usar los marcadores `[TRIAGE-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, `[TRIAGE-SOLUCION]`, `[TRIAGE-ACLARACION]`, `[TRIAGE-PROYECTO-NO-REGISTRADO]`.
+- Owner GitHub de UNNOPARTS en `registro_clientes/clientes.json` debe ser `kvelascoch123` (el org `unnoparts` no resuelve el repo).
 - Nunca publicar el comentario de solución (6.3) si el score de acertividad es 70 o menor.
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
