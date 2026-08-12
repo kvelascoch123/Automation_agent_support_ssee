@@ -121,6 +121,17 @@ Si existe la tabla `sidesoft_triage_glpi_log`, revisar también el último regis
 
 Con ese historial, evaluar en este orden:
 
+### 4.0 — Idempotencia: ¿este ticket ya fue procesado?
+Varias corridas (cron + webhooks de n8n) pueden coincidir sobre el mismo ticket. Antes de cualquier otra evaluación, revisar los followups del bot (`users_id = 148`) buscando los marcadores literales:
+
+`[TRIAGE-SCORE]` · `[TRIAGE-ANALISIS-9PASOS]` · `[TRIAGE-SOLUCION]` · `[TRIAGE-ACLARACION]` · `[TRIAGE-PROYECTO-NO-REGISTRADO]`
+
+- Si ya existen **a la vez** `[TRIAGE-SCORE]` y `[TRIAGE-ANALISIS-9PASOS]` → el ticket ya fue analizado por otra corrida. Registrar `estado_procesamiento = 'skip_idempotent'` y terminar sin publicar nada, sin importar qué agente los escribió.
+- Si existe `[TRIAGE-ACLARACION]` → continuar por 4.1/4.2 (no republicar preguntas).
+- Única excepción para reprocesar: la corrida anterior cerró en baja confianza **sin** evidencia de código y la actual sí tiene evidencia del módulo. En ese caso se publica una sola vez más.
+
+**No confiar en el log como sustituto de esta verificación.** Una fila de `sidesoft_triage_glpi_log` con `estado_procesamiento = 'preguntas_enviadas'` puede referenciar un followup que nunca llegó a existir (corrida anterior que registró un id supuesto). La fuente de verdad es el followup real en `glpi_itilfollowups`: si el id referenciado no existe y el ticket no tiene el marcador, el ticket cuenta como no procesado.
+
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
 
@@ -246,6 +257,22 @@ No fue ejecutado automáticamente.
 ```
 
 Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GLPI (`glpi_itilfollowups`, `sidesoft_triage_glpi_log`) — nunca sobre la base de datos de producción del ERP del cliente.
+
+---
+
+## Paso 6-C — Verificar que cada followup realmente se insertó
+
+Después de cada `INSERT` en `glpi_itilfollowups`, confirmar con un `SELECT` que la fila existe y obtener su `id` real:
+
+```sql
+SELECT id, is_private, date_creation FROM glpi_itilfollowups
+WHERE items_id = {ticket_id} AND itemtype = 'Ticket' AND users_id = 148
+ORDER BY id DESC LIMIT 5;
+```
+
+Solo se registran en el log del Paso 7 los ids devueltos por esta verificación — nunca un id supuesto o calculado. Si el `SELECT` no devuelve la fila, el comentario no se publicó: registrar `resultado = 'error'` con el detalle, no `preguntas_enviadas` ni `ok_*`.
+
+Evitar el carácter `;` dentro del HTML del comentario — el MCP de MySQL puede cortar la sentencia ahí y el `INSERT` falla en silencio.
 
 ---
 
