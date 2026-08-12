@@ -163,8 +163,25 @@ Aplicar los **5 mínimos funcionales** de `openbravo-triage-tecnico` sobre la de
 **Lectura de conocimiento:**
 
 1. Identifica el módulo/concepto probable con la tabla de pistas de `openbravo-triage-tecnico`.
-2. Lee siempre los grafos de graphify (`graphify-out/`) que se encuentran en el repositorio del cliente, directamente, tal cual como si se estuviera usando Cursor desde su IDE — con las herramientas normales de lectura/búsqueda de archivos, no como un paso condicional ni opcional.
-3. Si el repo del cliente no cuenta con `graphify-out/` o el contexto ahí disponible no resuelve lo que hace falta, cae al fallback: lee directamente el código fuente real del cliente (vía MCP de GitHub) en vez de la documentación de `conocimiento_comun/modulos/`.
+2. Consulta `graphify-out/` del repo del cliente. Es un paso obligatorio, pero acotado a lo que el grafo realmente puede responder — ver *Qué esperar de graphify* abajo.
+3. Lee el código fuente real del cliente vía MCP de GitHub. Para incidencias cuya causa está en la lógica de base de datos, este es el paso que resuelve, no el grafo.
+
+Si algo de esto no se ejecuta, declararlo como omitido en la sección 9 del análisis. **Nunca escribir que se revisó una fuente que no se abrió en esta corrida**, ni apoyarse en la conclusión de una corrida anterior para afirmar evidencia en la actual.
+
+### Qué esperar de graphify (medido sobre el repo de Unnoparts, 2026-08-12)
+
+`graphify-out/` tiene cuatro archivos y **no se leen vía MCP** — se bajan a `/tmp` con `curl` usando el `download_url` del listado de directorio y se procesan en local:
+
+| Archivo | Realidad | Uso |
+|---|---|---|
+| `graph.json` | puntero **Git LFS a 224 MB** | inaccesible en la práctica, la lectura devuelve solo el puntero |
+| `manifest.json` | 2,5 MB, solo ruta + `mtime` + hashes | **el único con valor operativo**: inventario de qué archivos están indexados |
+| `.graphify_analysis.json` | 12,4 MB: `communities`, `cohesion`, `gods`, `surprises` | clusters de nodos sin aristas consultables, valor marginal |
+| `.graphify_root` | 31 bytes | ninguno |
+
+**Limitante estructural: graphify indexa cero archivos `.xml`.** Como toda la lógica PL/SQL de Openbravo vive en `src-db/database/model/functions/*.xml`, el grafo **no puede ver** triggers ni funciones de base de datos, que son la causa raíz de la mayoría de las incidencias de soporte.
+
+Uso recomendado, barato y con retorno real: filtrar las claves de `manifest.json` por el nombre del módulo sospechoso para saber qué clases Java existen ahí. Eso orienta la lectura de código y a veces destapa una clase relevante que no aparecía en el listado de directorio. Todo lo demás del grafo se puede omitir sin pérdida, dejándolo anotado en la sección 9.
 
 Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, es común a todos los clientes), usando como entrada:
 - La descripción original del ticket,
