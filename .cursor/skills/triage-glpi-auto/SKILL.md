@@ -15,7 +15,7 @@ MCP de GitHub (`get_file_contents` o equivalente) se usa para leer archivos de l
 
 **Esta skill SIEMPRE invoca `openbravo-functional-ticket-analysis` como motor principal de diagnóstico** — no se activa por frase disparadora en este contexto automático, se ejecuta directo como parte del Paso 5 de este flujo.
 
-Este orquestador **recibe** los tickets a analizar (no los busca en GLPI): por cada ejecución llega un payload ya preparado por n8n con `{ticket_id, proyecto_glpi, texto_limpio, adjuntos}`. La búsqueda de tickets nuevos y la limpieza de HTML/imágenes ya las hizo n8n antes de disparar este Automation.
+Este orquestador **recibe** los tickets a analizar (no los busca en GLPI): por cada ejecución llega un payload ya preparado por n8n con `{ticket_id, texto_limpio, adjuntos}`. La búsqueda de tickets nuevos y la limpieza de HTML/imágenes ya las hizo n8n antes de disparar este Automation. **El proyecto del solicitante no viene en el payload** — este mismo Automation lo resuelve en el Paso 2, consultando GLPI directamente.
 
 ---
 
@@ -54,12 +54,28 @@ También leer, del propio repo orquestador (conocimiento común, aplica a todos 
 
 ---
 
-## Paso 2 — Resolver cliente y repo para cada ticket
+## Paso 2 — Resolver el proyecto del solicitante y el cliente/repo para cada ticket
 
-Por cada ticket recibido en el payload de entrada:
+El payload de entrada solo trae `{ticket_id, texto_limpio, adjuntos}` — el proyecto **no** viene incluido, lo resuelve este mismo paso.
 
-1. Tomar el valor de `proyecto_glpi`.
-2. Buscarlo como clave exacta en `registro_clientes/clientes.json` (Paso 0).
+1. Resolver el proyecto del solicitante vía MCP-DB (alias `glpi`). El proyecto GLPI no se vincula al ticket — se vincula al **solicitante**, vía el campo plugin `glpi_plugin_fields_userproyectorelacionadousers`:
+
+```sql
+SELECT COALESCE(pr.name, '') AS proyecto
+FROM glpi_tickets t
+LEFT JOIN glpi_tickets_users tu ON tu.tickets_id = t.id AND tu.type = 1
+LEFT JOIN glpi_plugin_fields_userproyectorelacionadousers up
+  ON up.items_id = tu.users_id
+LEFT JOIN glpi_projects pr
+  ON pr.id = REPLACE(REPLACE(REPLACE(up.projects_id_proyectorelacionadouserfield, '"', ''), '[', ''), ']', '')
+WHERE t.id = {ticket_id};
+```
+
+Si el solicitante puede tener más de un proyecto asignado en el campo plugin (multi-selección), avisar para cambiar el `REPLACE` por una comparación tipo `FIND_IN_SET` — tal como está, asume un solo valor por campo.
+
+Si la consulta no devuelve proyecto (`proyecto` vacío): registrar en el log `estado_procesamiento = 'proyecto_no_registrado'` y no procesar más este ticket en esta corrida.
+
+2. Buscar el proyecto obtenido como clave exacta en `registro_clientes/clientes.json` (Paso 0).
    - **No existe esa clave** → el proyecto no está habilitado en el registro. Registrar en el log `estado_procesamiento = 'proyecto_no_registrado'` y no procesar más este ticket en esta corrida.
    - **Existe** → obtener `{owner, repo}` de esa entrada y continuar al Paso 3.
 
@@ -198,7 +214,7 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}',
 `{comentario_sla_y_score_html}` incluye, en un solo bloque: Nivel SLA · Criticidad · Área funcional · Tiempo estimado de revisión inicial · Score de acertividad (0-100) · Justificación del rango.
 
 ### 6.2 — Comentario privado: detalle completo de los 9 pasos
-Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo.
+Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo. Si el `adjuntos` recibido en el payload no es `sin adjuntos`, agregar al final una nota: "Ticket con adjuntos no analizados automáticamente: {lista de nombres} — revisar manualmente en GLPI."
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
