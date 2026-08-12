@@ -15,11 +15,7 @@ MCP de GitHub (`get_file_contents` o equivalente) se usa para leer archivos de l
 
 **Esta skill SIEMPRE invoca `openbravo-functional-ticket-analysis` como motor principal de diagnóstico** — no se activa por frase disparadora en este contexto automático, se ejecuta directo como parte del Paso 5 de este flujo.
 
-## Alcance de prueba (mientras no se indique lo contrario)
-
-- Solo procesar tickets con ID **9477, 9478 y 5388**.
-- Cualquier otro ticket_id: ignorarlo por completo, no clasificar, no escribir nada.
-- Nunca modificar el **estado (status)** del ticket — restricción dura, no cambia nunca.
+Este orquestador **recibe** los tickets a analizar (no los busca en GLPI): por cada ejecución llega un payload ya preparado por n8n con `{ticket_id, proyecto_glpi, texto_limpio, adjuntos}`. La búsqueda de tickets nuevos y la limpieza de HTML/imágenes ya las hizo n8n antes de disparar este Automation.
 
 ---
 
@@ -58,68 +54,11 @@ También leer, del propio repo orquestador (conocimiento común, aplica a todos 
 
 ---
 
-## Paso 1 — Leer tickets nuevos con el proyecto de su solicitante
-
-Vía MCP-DB (alias `glpi`).
-
-**Importante:** el proyecto GLPI no se vincula al ticket — se vincula al **solicitante**, vía el campo plugin `glpi_plugin_fields_userproyectorelacionadousers`. El filtro de proyecto se hace a través del join con el solicitante (`tu.users_id`), no con el ticket directamente. Esto también cubre el caso de varios solicitantes distintos dentro del mismo proyecto: cualquiera de ellos que tenga el proyecto asignado en su perfil queda incluido automáticamente.
-
-**⚠️ Optimización de costo — limpieza de HTML e imágenes embebidas, SIEMPRE en el SQL, nunca en el razonamiento del agente.** El campo `content` de GLPI es HTML enriquecido, y por un comportamiento conocido de GLPI, las imágenes pegadas por el usuario a veces quedan embebidas como `<img src="data:image/...;base64,...">` directamente en ese campo — un solo pantallazo puede agregar decenas de miles de tokens de texto base64 inútil. Nunca dejes que el agente reciba el HTML crudo y lo "limpie" razonando — eso ya gastó los tokens. La limpieza va en la consulta misma:
-
-```sql
-SELECT
-  t.id AS ticket_id, t.name AS titulo,
-  REGEXP_REPLACE(
-    REGEXP_REPLACE(t.content, '<img[^>]*src="data:image[^"]*"[^>]*>', '[imagen adjunta — omitida]'),
-    '<[^>]+>', ''
-  ) AS descripcion_limpia,
-  u.name AS solicitante, tu.users_id AS solicitante_id,
-  COALESCE(c.name,'Sin categoría') AS categoria,
-  t.date AS fecha_apertura,
-  CASE t.status WHEN 1 THEN 'Nuevo' ELSE 'Otro' END AS estado,
-  COALESCE(pr.name,'') AS proyecto
-FROM glpi_tickets t
-LEFT JOIN glpi_tickets_users tu ON tu.tickets_id = t.id AND tu.type = 1
-LEFT JOIN glpi_users u ON u.id = tu.users_id
-LEFT JOIN glpi_itilcategories c ON c.id = t.itilcategories_id
--- Proyecto relacionado al SOLICITANTE (no al ticket)
-LEFT JOIN glpi_plugin_fields_userproyectorelacionadousers up
-  ON up.items_id = tu.users_id
-LEFT JOIN glpi_projects pr
-  ON pr.id = REPLACE(REPLACE(REPLACE(up.projects_id_proyectorelacionadouserfield, '"', ''), '[', ''), ']', '')
-WHERE t.status = 1
-  AND pr.name IS NOT NULL
-  AND t.id IN (9477, 9478, 5388);  -- whitelist de prueba, temporal — quitar esta línea cuando se libere a producción
-```
-
-`REGEXP_REPLACE` requiere MySQL 8.0+. Si el servidor es una versión anterior sin esta función, avisar — en ese caso el reemplazo de base64 tendría que hacerse con una combinación de `SUBSTRING_INDEX`/`LOCATE`, o aceptar que la limpieza de imágenes quede pendiente hasta actualizar el motor.
-
-**Si la imagen es relevante para el diagnóstico** (ej. pantallazo de un error): no se reintroduce el base64 como texto. Se revisa si el documento quedó también registrado en `glpi_documents_items` (vinculado al ticket) y, solo si hace falta verla, se descarga como archivo de imagen real para pasarla a una herramienta de visión — nunca como parte del string SQL ni del prompt de texto.
-
-Si un solicitante puede tener **más de un proyecto asignado** en el campo plugin (multi-selección), avisar para cambiar el `REPLACE` por una comparación tipo `FIND_IN_SET` — tal como está, asume un solo valor por campo.
-
-Para cada ticket obtenido, traer también su historial de followups, con la misma limpieza:
-```sql
-SELECT id, users_id,
-  REGEXP_REPLACE(
-    REGEXP_REPLACE(content, '<img[^>]*src="data:image[^"]*"[^>]*>', '[imagen adjunta — omitida]'),
-    '<[^>]+>', ''
-  ) AS contenido_limpio,
-  is_private, date_creation
-FROM glpi_itilfollowups
-WHERE items_id = {ticket_id} AND itemtype = 'Ticket'
-ORDER BY date_creation ASC;
-```
-
-Si existe la tabla `sidesoft_triage_glpi_log`, revisar el último registro por `ticket_id` para saber en qué punto del flujo quedó ese ticket (ver Paso 4).
-
----
-
 ## Paso 2 — Resolver cliente y repo para cada ticket
 
-Por cada ticket obtenido en el Paso 1:
+Por cada ticket recibido en el payload de entrada:
 
-1. Tomar el valor de la columna `proyecto`.
+1. Tomar el valor de `proyecto_glpi`.
 2. Buscarlo como clave exacta en `registro_clientes/clientes.json` (Paso 0).
    - **No existe esa clave** → el proyecto no está habilitado en el registro. Registrar en el log `estado_procesamiento = 'proyecto_no_registrado'` y no procesar más este ticket en esta corrida.
    - **Existe** → obtener `{owner, repo}` de esa entrada y continuar al Paso 3.
@@ -153,7 +92,18 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 
 ## Paso 4 — Determinar en qué punto del flujo está el ticket
 
-Evaluar en este orden, usando el historial de followups leído en el Paso 1:
+Primero, traer el historial de followups del ticket vía MCP-DB (alias `glpi`):
+
+```sql
+SELECT id, users_id, content, is_private, date_creation
+FROM glpi_itilfollowups
+WHERE items_id = {ticket_id} AND itemtype = 'Ticket'
+ORDER BY date_creation ASC;
+```
+
+Si existe la tabla `sidesoft_triage_glpi_log`, revisar también el último registro por `ticket_id` para saber en qué punto del flujo quedó ese ticket en una corrida anterior.
+
+Con ese historial, evaluar en este orden:
 
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
@@ -194,16 +144,11 @@ Aplicar los **5 mínimos funcionales** de `openbravo-triage-tecnico` sobre la de
 
 ## Paso 5 — Ejecutar el análisis funcional completo (motor: `openbravo-functional-ticket-analysis`)
 
-**Lectura de conocimiento — graphify primero, documentación como fallback (optimización de costo):**
+**Lectura de conocimiento:**
 
 1. Identifica el módulo/concepto probable con la tabla de pistas de `openbravo-triage-tecnico`.
-2. Si el repo del cliente tiene `graphify-out/` (ver `graphify.mdc`), consulta el código real vía CLI:
-   - `graphify query "<módulo o concepto del ticket>"` — subgrafo acotado
-   - `graphify explain "<concepto>"` — nodos relacionados
-   - `graphify path "<A>" "<B>"` — dependencia entre dos símbolos, si aplica
-3. **Regla dura, sin excepción**: nunca leer directamente `graphify-out/graph.json` (~120 MB), `graphify-out/cache/` ni ningún archivo dentro de `cache/ast/` — son caché interno del CLI, no documentación. Toda esta información se obtiene exclusivamente vía los comandos `graphify query/path/explain`, nunca con la herramienta de lectura de archivos.
-4. Solo si el repo del cliente **no tiene** `graphify-out/` (proyecto sin grafo generado aún), cae al fallback: leer **un solo** archivo de `conocimiento_comun/modulos/{NN-modulo-identificado}.md` — nunca los 15 completos.
-5. Lee `casos_de_uso_openbravo_erp.md` solo si el diagnóstico lo requiere para citar un caso de uso concreto — no por defecto.
+2. Lee siempre los grafos de graphify (`graphify-out/`) que se encuentran en el repositorio del cliente, directamente, tal cual como si se estuviera usando Cursor desde su IDE — con las herramientas normales de lectura/búsqueda de archivos, no como un paso condicional ni opcional.
+3. Si el repo del cliente no cuenta con `graphify-out/` o el contexto ahí disponible no resuelve lo que hace falta, cae al fallback: lee directamente el código fuente real del cliente (vía MCP de GitHub) en vez de la documentación de `conocimiento_comun/modulos/`.
 
 Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, es común a todos los clientes), usando como entrada:
 - La descripción original del ticket,
@@ -313,7 +258,6 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 
 ## Reglas críticas (aplican siempre, sin excepción)
 
-- Nunca procesar tickets fuera del whitelist (9477, 9478, 5388).
 - Nunca modificar `status`.
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
@@ -321,33 +265,7 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca publicar el comentario de solución (6.3) si el score de acertividad es 70 o menor.
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
-- Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/` — usar solo los comandos `graphify query/path/explain`.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
 - Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT`, con filtros y `LIMIT` en tablas de alto volumen.
 - Siempre registrar el resultado en `sidesoft_triage_glpi_log`, incluso si el ticket terminó en preguntas, en espera, o sin proyecto registrado.
-
----
-
-## Cambio de esquema requerido en `sidesoft_triage_glpi_log`
-
-```sql
-ALTER TABLE sidesoft_triage_glpi_log
-  ADD COLUMN proyecto_glpi VARCHAR(255) NULL,
-  ADD COLUMN repo_cliente VARCHAR(255) NULL,
-  ADD COLUMN followup_sla_score_id INT NULL,
-  ADD COLUMN followup_analisis_id INT NULL,
-  ADD COLUMN followup_publico_solucion_id INT NULL,
-  ADD COLUMN score_acertividad INT NULL;
-```
-
----
-
-## Optimización de costo (importante — revisar antes de dejarlo corriendo sin supervisión)
-
-1. **graphify primero, documentación completa como último recurso.** Si el repo del cliente tiene `graphify-out/`, usar siempre `graphify query/path/explain` para entender el código real — nunca cargar los 15 archivos de `conocimiento_comun/modulos/` de una vez, y ni siquiera uno completo si graphify ya resuelve la duda.
-2. **Nunca leer `graphify-out/graph.json`, `graphify-out/cache/`, ni archivos dentro de `cache/ast/`** — son caché interno (cientos de MB), no contenido para leer con la herramienta de archivos. Un solo intento de leer `graph.json` puede costar más que toda una corrida normal.
-3. **Limpiar HTML e imágenes base64 en el SQL del Paso 1, no en el razonamiento del agente** — un solo pantallazo embebido como base64 puede costar decenas de miles de tokens de puro ruido; ver el detalle en el Paso 1.
-4. **Modelo del Automation**: los Pasos 0-4 (leer registro, SQL, resolver cliente/repo, chequear 5 mínimos funcionales) son mecánicos y no requieren el modelo más fuerte. Si el panel de Settings del Automation permite fijar un modelo económico por defecto y solo el Paso 5 (análisis de 9 pasos) y el score dentro de 6.1 necesitan el modelo premium, configúralo así — esto no se controla desde este archivo, sino desde la configuración del Automation.
-5. **No releer archivos estáticos que no cambian entre corridas** (`registro_clientes/clientes.json`, `config_agent_support/cliente.json` del cliente) más de una vez por sesión de análisis del lote de tickets — resuélvelos una vez al inicio de la corrida y reutilízalos para todos los tickets de esa misma ejecución, no por ticket.
-6. **Evita llamadas MCP redundantes**: si dos tickets de la misma corrida resuelven al mismo cliente, no repitas la lectura del contexto del Paso 3 — reutiliza lo ya leído en esa corrida.
