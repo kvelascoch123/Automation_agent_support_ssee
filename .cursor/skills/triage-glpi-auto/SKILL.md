@@ -163,8 +163,88 @@ Aplicar los **5 mínimos funcionales** de `openbravo-triage-tecnico` sobre la de
 **Lectura de conocimiento:**
 
 1. Identifica el módulo/concepto probable con la tabla de pistas de `openbravo-triage-tecnico`.
-2. Lee siempre los grafos de graphify (`graphify-out/`) que se encuentran en el repositorio del cliente, directamente, tal cual como si se estuviera usando Cursor desde su IDE — con las herramientas normales de lectura/búsqueda de archivos, no como un paso condicional ni opcional.
-3. Si el repo del cliente no cuenta con `graphify-out/` o el contexto ahí disponible no resuelve lo que hace falta, cae al fallback: lee directamente el código fuente real del cliente (vía MCP de GitHub) en vez de la documentación de `conocimiento_comun/modulos/`.
+2. Consulta `graphify-out/` del repo del cliente. Es un paso obligatorio, pero acotado a lo que el grafo realmente puede responder — ver *Qué esperar de graphify* abajo.
+3. Lee el código fuente real del cliente vía MCP de GitHub. Para incidencias cuya causa está en la lógica de base de datos, este es el paso que resuelve, no el grafo.
+
+Si algo de esto no se ejecuta, declararlo como omitido en la sección 9 del análisis. **Nunca escribir que se revisó una fuente que no se abrió en esta corrida**, ni apoyarse en la conclusión de una corrida anterior para afirmar evidencia en la actual.
+
+### Qué esperar de graphify (medido sobre el repo de Unnoparts, 2026-08-12)
+
+`graphify-out/` tiene cuatro archivos y **no se leen vía MCP** — se bajan a `/tmp` con `curl` usando el `download_url` del listado de directorio y se procesan en local:
+
+| Archivo | Realidad | Uso |
+|---|---|---|
+| `graph.json` | puntero **Git LFS a 224 MB** | inaccesible en la práctica, la lectura devuelve solo el puntero |
+| `manifest.json` | 2,5 MB, solo ruta + `mtime` + hashes | **el único con valor operativo**: inventario de qué archivos están indexados |
+| `.graphify_analysis.json` | 12,4 MB: `communities`, `cohesion`, `gods`, `surprises` | clusters de nodos sin aristas consultables, valor marginal |
+| `.graphify_root` | 31 bytes | ninguno |
+
+**Limitante estructural: graphify indexa cero archivos `.xml`.** Como toda la lógica PL/SQL de Openbravo vive en `src-db/database/model/functions/*.xml`, el grafo **no puede ver** triggers ni funciones de base de datos, que son la causa raíz de la mayoría de las incidencias de soporte.
+
+Uso recomendado, barato y con retorno real: filtrar las claves de `manifest.json` por el nombre del módulo sospechoso para saber qué clases Java existen ahí. Eso orienta la lectura de código y a veces destapa una clase relevante que no aparecía en el listado de directorio. Todo lo demás del grafo se puede omitir sin pérdida, dejándolo anotado en la sección 9.
+
+**Procedimiento exacto** — cuesta segundos, no hay razón para saltárselo:
+
+```bash
+mkdir -p /tmp/gfy
+# el download_url sale del listado de directorio de graphify-out/
+curl -sSL -o /tmp/gfy/manifest.json "<download_url de manifest.json>"
+python3 -c "
+import json,sys
+m=json.load(open('/tmp/gfy/manifest.json'))
+mod=sys.argv[1]
+print('entradas totales:',len(m))
+for p in sorted(k for k in m if mod in k): print(' ',p)
+" ec.com.sidesoft.pre.cancellations
+```
+
+La salida (número de entradas + lista de archivos indexados del módulo) es el **dato probatorio** que exige el registro de evidencia del Paso 5-A.
+
+---
+
+### Paso 5-A — Orden de fuentes, precedencia de la memoria y registro de evidencia
+
+Existe para impedir un fallo concreto ya ocurrido: la memoria del Automation traía la nota *"graphify no aporta nada utilizable"*, se tomó esa conclusión pasada como hecho presente, se omitió un paso obligatorio y **se afirmó en un comentario publicado que sí se había revisado**. La memoria terminó pesando más que la propia skill porque nada decía cuál manda.
+
+#### 1. Regla de precedencia (no admite excepción)
+
+> **La memoria nunca cancela un paso obligatorio. Solo puede cambiar cómo de barato se ejecuta, nunca si se ejecuta.**
+
+La memoria es una caché de conclusiones pasadas, no una fuente de evidencia del caso actual. Una nota de memoria puede decir *qué esperar* y *cómo leerlo barato*. No puede autorizar a no mirar. Si una nota de memoria, leída literalmente, llevaría a saltarse una fuente obligatoria, esa nota está mal escrita: hay que ejecutar el paso igual y reescribir la nota (ver punto 4).
+
+#### 2. Orden obligatorio: primero la fuente, después la memoria
+
+1. **Abrir la fuente primaria** de esta corrida — `graphify-out/` según el procedimiento de arriba, y el código del cliente.
+2. **Recién entonces leer la memoria**, para interpretar lo que se acaba de ver, ahorrar exploración y contrastar con corridas anteriores.
+3. Si la memoria **contradice** lo observado ahora, gana lo observado ahora. Corregir la memoria en la misma corrida, indicando qué decía, qué se midió y cuándo.
+
+La memoria se consulta *después* justamente para que no pueda sesgar la decisión de mirar o no mirar.
+
+#### 3. Registro de evidencia (obligatorio en la sección 9 del análisis)
+
+Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍDO` **solo es válido si la tercera columna trae un dato concreto obtenido en esta corrida**. Sin dato, el estado es `OMITIDO`, no `LEÍDO`.
+
+| Fuente | Estado | Dato probatorio de esta corrida |
+|---|---|---|
+| `graphify-out/manifest.json` | LEÍDO / OMITIDO | nº de entradas y archivos indexados del módulo |
+| Código fuente del módulo | LEÍDO / OMITIDO | archivos y funciones concretas abiertas |
+| BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo |
+| Contexto del cliente (Paso 3) | LEÍDO / OMITIDO | archivo y contenido relevante |
+
+No sirve como dato probatorio: una cita de la memoria, una conclusión de una corrida anterior, ni una descripción genérica del archivo. Sirve un número, un nombre de archivo o un fragmento que solo se puede conocer habiéndolo abierto ahora.
+
+#### 4. Higiene de la memoria
+
+- Redactar toda nota sobre una fuente como **expectativa con procedencia**, nunca como veredicto ni prohibición. Mal: *"graphify no sirve"*. Bien: *"verificado el 2026-08-12: `graph.json` es un puntero LFS de 224 MB y el índice no incluye `.xml`, así que para causas en PL/SQL no aporta - usar `manifest.json` para listar el Java del módulo, cuesta segundos"*.
+- Toda nota lleva **fecha de verificación y el comando o consulta** que la produjo. Una nota sin procedencia se trata como no verificada.
+- Escribir en la memoria **qué esperar y a qué costo**, para acelerar el paso. Nunca *si hay que darlo* — eso lo decide la skill.
+- Al corregir una nota equivocada, dejar constancia de qué decía antes. Los errores silenciosamente sobreescritos se repiten.
+
+#### 5. Excepciones
+
+Una omisión es legítima solo si es **explícita, justificada y auditable**: estado `OMITIDO` en la tabla, motivo en la sección 9, y reflejo en `respuesta_modelo_raw` del log del Paso 7. Lo que no es aceptable es la omisión silenciosa ni la que se apoya en la memoria como coartada. Si la misma fuente aparece `OMITIDO` en corridas sucesivas, eso es señal de que el procedimiento de lectura es demasiado caro y hay que arreglarlo en la skill, no normalizar el salto.
+
+---
 
 Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, es común a todos los clientes), usando como entrada:
 - La descripción original del ticket,
@@ -215,6 +295,12 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}',
 
 ### 6.2 — Comentario privado: detalle completo de los 9 pasos
 Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo. Si el `adjuntos` recibido en el payload no es `sin adjuntos`, agregar al final una nota: "Ticket con adjuntos no analizados automáticamente: {lista de nombres} — revisar manualmente en GLPI."
+
+**Obligatorio: dividir este comentario en dos followups.** El documento completo de 9 secciones supera el límite de escritura del MCP (ver *Límite de tamaño* abajo) y se pierde entero si se inserta como un solo bloque. Publicar:
+- `[TRIAGE-ANALISIS-9PASOS] Parte 1 de 2` — secciones 1 a 3 (Clasificación, Entendimiento, Diagnóstico técnico).
+- `[TRIAGE-ANALISIS-9PASOS] Parte 2 de 2` — secciones 4 a 6 y 8 a 9, más la nota de adjuntos.
+
+En el log del Paso 7, `followup_analisis_id` lleva el id de la Parte 1, y ambos ids se detallan en `respuesta_modelo_raw`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
@@ -236,6 +322,23 @@ WHERE id = {ticket_id};
 ```
 
 **Nota sobre notificación al solicitante**: el INSERT directo en `glpi_itilfollowups` no dispara el correo de notificación de GLPI. Pendiente de confirmar si la API REST está habilitada para ese caso.
+
+### 6-A — Límite de tamaño y verificación obligatoria de cada INSERT
+
+El MCP-DB **descarta en silencio** un `INSERT` cuyo `content` supere aproximadamente **3,2 KB**: la herramienta responde `Insert successful ... Last insert ID: N`, el contador de auto-incremento avanza, y la fila nunca queda en la tabla. Confirmado el 2026-08-12 comparando `SELECT MAX(id) FROM glpi_itilfollowups` contra los ids que el log daba por insertados. No es concurrencia entre corridas ni latencia de réplica.
+
+Por eso, para **cada** `INSERT` de este flujo (`glpi_itilfollowups` y `sidesoft_triage_glpi_log`):
+
+1. Mantener el `content` por debajo de ~3,2 KB — dividir en varios followups si hace falta (ver 6.2).
+2. Insertar.
+3. Verificar con un `SELECT` por el id devuelto, **en una llamada aparte** — un `SELECT` en el mismo lote puede dar falso negativo por latencia.
+4. Si vuelve vacío, repetir el `SELECT` una vez más antes de concluir que se perdió.
+5. Si sigue vacío, reintentar el `INSERT` una sola vez.
+6. Registrar en el log únicamente ids que hayan pasado por un `SELECT` positivo. Nunca encadenar el INSERT del log con un id sin verificar.
+
+Al inicio de cada corrida, no confiar en los ids de followup de un registro anterior de `sidesoft_triage_glpi_log`: releer siempre el historial real del ticket (Paso 4). Chequeo rápido: si un id registrado es mayor que el `MAX(id)` actual de la tabla, esa fila nunca existió.
+
+**Caracteres a evitar en cualquier string enviado por el MCP**: el punto y coma, tanto literal como dentro de entidades HTML (`&mdash;`, `&gt;`). Usar guiones y palabras. Las etiquetas `<br>` y `<b>` sí son seguras.
 
 ### 6-B — Si el análisis produjo un script SQL correctivo sobre el ERP del cliente
 Siguiendo la regla dura de `openbravo-triage-tecnico` para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
@@ -285,3 +388,6 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
 - Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT`, con filtros y `LIMIT` en tablas de alto volumen.
 - Siempre registrar el resultado en `sidesoft_triage_glpi_log`, incluso si el ticket terminó en preguntas, en espera, o sin proyecto registrado.
+- Nunca dar por buena la respuesta `Insert successful` del MCP-DB: todo id se confirma con un `SELECT` posterior, en una llamada aparte (Paso 6-A).
+- La memoria del Automation nunca cancela un paso obligatorio: solo abarata su ejecución (Paso 5-A). Ante contradicción entre la memoria y lo observado en esta corrida, gana lo observado, y la memoria se corrige en el momento.
+- Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
