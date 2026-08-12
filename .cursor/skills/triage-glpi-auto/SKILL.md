@@ -215,6 +215,12 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}',
 
 ### 6.2 — Comentario privado: detalle completo de los 9 pasos
 Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo. Si el `adjuntos` recibido en el payload no es `sin adjuntos`, agregar al final una nota: "Ticket con adjuntos no analizados automáticamente: {lista de nombres} — revisar manualmente en GLPI."
+
+**Obligatorio: dividir este comentario en dos followups.** El documento completo de 9 secciones supera el límite de escritura del MCP (ver *Límite de tamaño* abajo) y se pierde entero si se inserta como un solo bloque. Publicar:
+- `[TRIAGE-ANALISIS-9PASOS] Parte 1 de 2` — secciones 1 a 3 (Clasificación, Entendimiento, Diagnóstico técnico).
+- `[TRIAGE-ANALISIS-9PASOS] Parte 2 de 2` — secciones 4 a 6 y 8 a 9, más la nota de adjuntos.
+
+En el log del Paso 7, `followup_analisis_id` lleva el id de la Parte 1, y ambos ids se detallan en `respuesta_modelo_raw`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
@@ -236,6 +242,23 @@ WHERE id = {ticket_id};
 ```
 
 **Nota sobre notificación al solicitante**: el INSERT directo en `glpi_itilfollowups` no dispara el correo de notificación de GLPI. Pendiente de confirmar si la API REST está habilitada para ese caso.
+
+### 6-A — Límite de tamaño y verificación obligatoria de cada INSERT
+
+El MCP-DB **descarta en silencio** un `INSERT` cuyo `content` supere aproximadamente **3,2 KB**: la herramienta responde `Insert successful ... Last insert ID: N`, el contador de auto-incremento avanza, y la fila nunca queda en la tabla. Confirmado el 2026-08-12 comparando `SELECT MAX(id) FROM glpi_itilfollowups` contra los ids que el log daba por insertados. No es concurrencia entre corridas ni latencia de réplica.
+
+Por eso, para **cada** `INSERT` de este flujo (`glpi_itilfollowups` y `sidesoft_triage_glpi_log`):
+
+1. Mantener el `content` por debajo de ~3,2 KB — dividir en varios followups si hace falta (ver 6.2).
+2. Insertar.
+3. Verificar con un `SELECT` por el id devuelto, **en una llamada aparte** — un `SELECT` en el mismo lote puede dar falso negativo por latencia.
+4. Si vuelve vacío, repetir el `SELECT` una vez más antes de concluir que se perdió.
+5. Si sigue vacío, reintentar el `INSERT` una sola vez.
+6. Registrar en el log únicamente ids que hayan pasado por un `SELECT` positivo. Nunca encadenar el INSERT del log con un id sin verificar.
+
+Al inicio de cada corrida, no confiar en los ids de followup de un registro anterior de `sidesoft_triage_glpi_log`: releer siempre el historial real del ticket (Paso 4). Chequeo rápido: si un id registrado es mayor que el `MAX(id)` actual de la tabla, esa fila nunca existió.
+
+**Caracteres a evitar en cualquier string enviado por el MCP**: el punto y coma, tanto literal como dentro de entidades HTML (`&mdash;`, `&gt;`). Usar guiones y palabras. Las etiquetas `<br>` y `<b>` sí son seguras.
 
 ### 6-B — Si el análisis produjo un script SQL correctivo sobre el ERP del cliente
 Siguiendo la regla dura de `openbravo-triage-tecnico` para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
@@ -285,3 +308,4 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
 - Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT`, con filtros y `LIMIT` en tablas de alto volumen.
 - Siempre registrar el resultado en `sidesoft_triage_glpi_log`, incluso si el ticket terminó en preguntas, en espera, o sin proyecto registrado.
+- Nunca dar por buena la respuesta `Insert successful` del MCP-DB: todo id se confirma con un `SELECT` posterior, en una llamada aparte (Paso 6-A).
