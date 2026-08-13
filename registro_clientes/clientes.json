@@ -1,4 +1,5 @@
 {
   "UNNOPARTS": { "owner": "unnoparts", "repo": "Unnoparts-Agente-Soporte", "openbravo_db_alias": "unnoparts" },
-  "INDUMOT": { "owner": "indumot", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" }
+  "INDUMOT": { "owner": "indumot", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" },
+  "HAPPYCELL": { "owner": "happycell", "repo": "CodigoCompletoHappy" , "openbravo_db_alias": "happycell" }
 }
