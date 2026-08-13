@@ -10,7 +10,10 @@ No requiere frase disparadora ni confirmación — se ejecuta completo de inicio
 
 Este Automation está vinculado a UN SOLO repo (el **orquestador**) — nunca a los repos de cliente. Los repos de cliente se leen dinámicamente vía MCP de GitHub, según el proyecto del solicitante de cada ticket.
 
-MCP-DB (alias `glpi`) se usa para leer y escribir sobre la base de datos GLPI (compartida por todos los clientes).
+MCP-DB (servidor `sidesoft-db`, https://mcp-db.sidesoftcorp.com) se usa para dos cosas distintas, ambas vía el mismo servidor pero con `database` (alias) diferente:
+- `database = "glpi"` → leer y escribir sobre la base de datos GLPI (compartida por todos los clientes, único alias con permiso de escritura de este flujo).
+- `database = {openbravo_db_alias del cliente}` → consultar, siempre de solo lectura (`pg_query`/`pg_describe_table`, nunca `pg_execute`), la base contable Openbravo del cliente resuelto en el Paso 2 (ver Paso 3-B).
+
 MCP de GitHub (`get_file_contents` o equivalente) se usa para leer archivos de los repos de cliente sin clonarlos.
 
 **Esta skill SIEMPRE invoca `openbravo-functional-ticket-analysis` como motor principal de diagnóstico** — no se activa por frase disparadora en este contexto automático, se ejecuta directo como parte del Paso 5 de este flujo.
@@ -43,7 +46,7 @@ Leer `registro_clientes/clientes.json` en la raíz del repo orquestador (lectura
 }
 ```
 
-`openbravo_db_alias` identifica la BD de Openbravo (PostgreSQL) de ese cliente para verificaciones contables — se deja en `null` hasta que se configure el MCP de Postgres correspondiente (ver Paso 3-B). Mientras esté en `null`, el análisis procede solo con conocimiento estático, sin verificación en BD real.
+`openbravo_db_alias` identifica la BD de Openbravo (PostgreSQL) de ese cliente para verificaciones contables — es el valor de la columna "ALIAS MCP" del Panel MCP (https://mcp-db.sidesoftcorp.com/admin/databases), no un nombre inventado. El servidor MCP-DB ya está activo para todos los alias ahí listados; lo único pendiente por cliente es completar este campo en `clientes.json` con el alias exacto (ver Paso 3-B para cómo se usa). Mientras esté en `null`, el análisis procede solo con conocimiento estático, sin verificación en BD real.
 
 Este registro es la única fuente de verdad de qué proyectos GLPI están habilitados y a qué repo corresponde cada uno. Agregar un cliente nuevo = una entrada nueva aquí — no requiere tocar esta skill.
 
@@ -98,11 +101,14 @@ Si alguno de estos archivos no existe en ese repo, continuar el análisis solo c
 
 Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-sidesoft`) resulta **CONTABLE**, y el cliente tiene `openbravo_db_alias` distinto de `null` en el registro:
 
-1. Usar el MCP de PostgreSQL correspondiente para consultar, con `SELECT` filtrado y `LIMIT`, las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) siguiendo las reglas SQL de `openbravo-soporte-sidesoft`.
-2. Usar el resultado real para confirmar o descartar la hipótesis de causa raíz antes de redactar el análisis del Paso 5.
-3. Si `openbravo_db_alias` es `null` (MCP aún no configurado para ese cliente), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD contable no disponible para este cliente."*
+1. Usar la herramienta MCP-DB (servidor `sidesoft-db`, https://mcp-db.sidesoftcorp.com) para consultar la base del cliente. El parámetro `database` de estas herramientas debe recibir EXACTAMENTE el valor de `openbravo_db_alias` del cliente resuelto en el Paso 2 — es un alias lógico, no el host ni credenciales reales; ese mapeo lo resuelve el servidor MCP-DB, no esta skill.
+2. Antes de consultar tablas que no se conozcan de memoria, usar `pg_describe_table` (parámetros: `database` = alias del cliente, `table` = nombre de tabla) para confirmar el esquema real en vez de asumirlo.
+3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) siguiendo las reglas SQL de `openbravo-soporte-sidesoft`.
+4. Usar el resultado real para confirmar o descartar la hipótesis de causa raíz antes de redactar el análisis del Paso 5.
+5. Si `pg_query` falla contra el alias configurado (conexión caída, alias inexistente), usar `pg_list_databases` para confirmar qué alias están disponibles en esta corrida, registrar la incidencia en el log, y continuar sin esta verificación.
+6. Si `openbravo_db_alias` es `null` (cliente sin base Openbravo asociada), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD contable no disponible para este cliente."*
 
-**Regla dura**: esta consulta es SIEMPRE de solo lectura. Ningún `INSERT`/`UPDATE`/`DELETE`/`DDL` se ejecuta contra la BD de Openbravo del cliente en modo automático — ver Paso 6-B para cómo se maneja una corrección sugerida.
+**Regla dura**: esta consulta es SIEMPRE de solo lectura, siempre vía `pg_query`. `pg_execute` (lectura/escritura) está reservado exclusivamente para el alias interno `glpi`; nunca se usa contra el alias de un cliente. Ningún `INSERT`/`UPDATE`/`DELETE`/`DDL` se ejecuta contra la BD de Openbravo del cliente en modo automático — ver Paso 6-B para cómo se maneja una corrección sugerida.
 
 ---
 
@@ -386,7 +392,7 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
-- Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT`, con filtros y `LIMIT` en tablas de alto volumen.
+- Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT` vía `pg_query`/`pg_describe_table` de MCP-DB, con `database` = `openbravo_db_alias` exacto del cliente (nunca un alias adivinado o distinto al registrado en `clientes.json`), con filtros y `LIMIT` en tablas de alto volumen. `pg_execute` nunca se usa contra el alias de un cliente.
 - Siempre registrar el resultado en `sidesoft_triage_glpi_log`, incluso si el ticket terminó en preguntas, en espera, o sin proyecto registrado.
 - Nunca dar por buena la respuesta `Insert successful` del MCP-DB: todo id se confirma con un `SELECT` posterior, en una llamada aparte (Paso 6-A).
 - La memoria del Automation nunca cancela un paso obligatorio: solo abarata su ejecución (Paso 5-A). Ante contradicción entre la memoria y lo observado en esta corrida, gana lo observado, y la memoria se corrige en el momento.
