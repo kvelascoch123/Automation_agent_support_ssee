@@ -97,13 +97,36 @@ Si alguno de estos archivos no existe en ese repo, continuar el análisis solo c
 
 ---
 
+## Paso 3-A — Extraer datos accionables de `Detalles Adicionales:` (si el ticket tenía imágenes)
+
+`texto_limpio` puede traer, al final, una sección `Detalles Adicionales:` con el texto que un modelo de visión (Abacus, vía n8n) extrajo de cada imagen del ticket — pantallazos de pantallas del ERP, facturas, comprobantes, etc. Esa sección viene tal cual la devolvió el modelo: mezcla campos útiles con ruido (etiquetas de UI, campos vacíos, texto decorativo). Este paso decide qué de eso sirve como **filtro concreto** para la verificación en BD del Paso 3-B, y qué se descarta.
+
+1. **Si `texto_limpio` no trae `Detalles Adicionales:`**, no hay nada que extraer aquí — ir directo al Paso 3-B con los datos que ya traiga la descripción original del ticket (si el usuario escribió un número de documento a mano, por ejemplo).
+
+2. **Si trae `Detalles Adicionales:`**, de cada bloque `Imagen N:` extraer únicamente los campos con valor real que sirvan como identificador o filtro de una fila en BD:
+   - Números de documento: Nº documento, Nº de factura, Nº de pedido, Nº de nota de crédito/débito, número de comprobante.
+   - Montos: total cobrado, total pendiente, total mora, importe, saldo.
+   - Fechas: fecha de pago, fecha de vencimiento, fecha de emisión.
+   - Identificadores de tercero/cliente: nombre o CI/NIF del cliente, razón social.
+   - Tipo de documento y organización/sucursal, cuando ayuden a acotar la tabla o el `WHERE`.
+
+   **Descartar** (no pasa al Paso 3-B): etiquetas de campo sin valor, campos marcados por el propio modelo como vacíos o en cero salvo que el ticket trate justamente de por qué algo está en cero, texto puramente decorativo (logos, headers de sección, nombres de columnas de una tabla sin sus valores), y cualquier dato que no identifique una fila concreta (colores resaltados, formato visual, etc. — esos van al análisis funcional del Paso 5, no a un filtro SQL).
+
+3. **Decidir viabilidad del análisis en BD** con el resultado de la extracción:
+   - **Viable** — se logró al menos un identificador concreto y único (número de documento/factura/pedido, o la combinación tercero + fecha + monto). Pasar estos valores como filtros literales al `WHERE` de las consultas del Paso 3-B, en vez de hacer `SELECT` exploratorios sin acotar.
+   - **No viable** — `Detalles Adicionales:` solo trae campos genéricos, vacíos, o ninguno de los anteriores. Continuar el Paso 3-B igual si la descripción original (no la imagen) ya trae un identificador propio; si tampoco lo trae, anotar en el comentario privado: *"Imagen adjunta sin datos suficientes para acotar una verificación en BD — se revisó solo con conocimiento estático."* y no ejecutar `pg_query` a ciegas sin `WHERE`.
+
+4. Dejar registro de qué identificadores se usaron (o por qué no se usó ninguno) — es el dato probatorio que exige el registro de evidencia del Paso 5-A cuando la fuente sea "BD del ERP".
+
+---
+
 ## Paso 3-B — Verificación contable en BD de Openbravo (solo si aplica, y solo lectura)
 
 Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-sidesoft`) resulta **CONTABLE**, y el cliente tiene `openbravo_db_alias` distinto de `null` en el registro:
 
 1. Usar la herramienta MCP-DB (servidor `sidesoft-db`, https://mcp-db.sidesoftcorp.com) para consultar la base del cliente. El parámetro `database` de estas herramientas debe recibir EXACTAMENTE el valor de `openbravo_db_alias` del cliente resuelto en el Paso 2 — es un alias lógico, no el host ni credenciales reales; ese mapeo lo resuelve el servidor MCP-DB, no esta skill.
 2. Antes de consultar tablas que no se conozcan de memoria, usar `pg_describe_table` (parámetros: `database` = alias del cliente, `table` = nombre de tabla) para confirmar el esquema real en vez de asumirlo.
-3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) siguiendo las reglas SQL de `openbravo-soporte-sidesoft`.
+3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) siguiendo las reglas SQL de `openbravo-soporte-sidesoft`. **Si el Paso 3-A extrajo identificadores concretos, usarlos como filtro `WHERE`** (número de documento, tercero, fecha, monto) — eso convierte la verificación en una búsqueda dirigida en vez de una exploración genérica de la tabla.
 4. Usar el resultado real para confirmar o descartar la hipótesis de causa raíz antes de redactar el análisis del Paso 5.
 5. Si `pg_query` falla contra el alias configurado (conexión caída, alias inexistente), usar `pg_list_databases` para confirmar qué alias están disponibles en esta corrida, registrar la incidencia en el log, y continuar sin esta verificación.
 6. Si `openbravo_db_alias` es `null` (cliente sin base Openbravo asociada), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD contable no disponible para este cliente."*
@@ -234,6 +257,7 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 |---|---|---|
 | `graphify-out/manifest.json` | LEÍDO / OMITIDO | nº de entradas y archivos indexados del módulo |
 | Código fuente del módulo | LEÍDO / OMITIDO | archivos y funciones concretas abiertas |
+| `Detalles Adicionales:` de imágenes (Paso 3-A) | LEÍDO / SIN IMÁGENES | identificador(es) extraído(s) usado(s) como filtro, o motivo de no viable |
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO | archivo y contenido relevante |
 
@@ -395,5 +419,6 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Toda consulta a la BD de Openbravo del cliente (Paso 3-B) es siempre `SELECT` vía `pg_query`/`pg_describe_table` de MCP-DB, con `database` = `openbravo_db_alias` exacto del cliente (nunca un alias adivinado o distinto al registrado en `clientes.json`), con filtros y `LIMIT` en tablas de alto volumen. `pg_execute` nunca se usa contra el alias de un cliente.
 - Siempre registrar el resultado en `sidesoft_triage_glpi_log`, incluso si el ticket terminó en preguntas, en espera, o sin proyecto registrado.
 - Nunca dar por buena la respuesta `Insert successful` del MCP-DB: todo id se confirma con un `SELECT` posterior, en una llamada aparte (Paso 6-A).
+- Nunca usar `Detalles Adicionales:` de una imagen tal cual, sin pasar por el filtrado del Paso 3-A, como valor literal de un `WHERE` — solo los campos identificados como identificador/monto/fecha concretos, nunca ruido de etiquetas o texto decorativo.
 - La memoria del Automation nunca cancela un paso obligatorio: solo abarata su ejecución (Paso 5-A). Ante contradicción entre la memoria y lo observado en esta corrida, gana lo observado, y la memoria se corrige en el momento.
 - Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
