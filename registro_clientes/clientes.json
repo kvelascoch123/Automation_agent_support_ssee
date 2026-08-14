@@ -1,6 +1,6 @@
 {
   "UNNOPARTS": { "owner": "unnoparts", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
-  "INDUMOT SA": { "owner": "indumot", "repo": "CodigoCompletoIndumot", "openbravo_db_alias": "indumot" },
+  "INDUMOT SA": { "owner": "kvelascoch123", "repo": "CodigoCompletoIndumot", "openbravo_db_alias": "indumot" },
   "HAPPYCELL": { "owner": "happycell", "repo": "CodigoCompletoHappy", "openbravo_db_alias": "happycell" },
   "HAPPYPAY": { "owner": "happypay", "repo": "CodigoCompletoHappyPay", "openbravo_db_alias": "happypay" },
   "ACTUARIA CONSULTORES S.A": { "owner": "actuaria", "repo": "ActuariaCodigoCompleto", "openbravo_db_alias": "actuaria" }
