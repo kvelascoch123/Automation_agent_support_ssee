@@ -336,22 +336,34 @@ INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_edi
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
 ```
 
-### 6.3 — Comentario privado (condicional): solo si score >= 80
+### 6.3 — Comentario condicional según score de acertividad
+
+Evaluar el score de acertividad (calculado en 6.1, sobre la §7 del análisis del Paso 5) para decidir qué publicar:
+
+- **Score > 90**: el contenido de la respuesta se aplica como **solución del ticket** (tabla `glpi_itilsolutions`), no como followup. El cambio de `status` a Resuelto se aplica en el Paso 6.4, Caso A.
+```sql
+INSERT INTO glpi_itilsolutions (itemtype, items_id, solutiontypes_id, content, date_creation, date_mod, users_id, status)
+VALUES ('Ticket', {ticket_id}, 0, '{comentario_publico_respuesta_formateada}', NOW(), NOW(), 148, 1);
+```
+**Nota:** verificar contra el esquema real de GLPI (`pg_describe_table`/equivalente) los nombres de columna de `glpi_itilsolutions` antes de usar esta skill en producción — igual que `{ID_KVELASCO}`, no confirmado en esta corrección.
+
+- **Score > 70 y <= 90**: publicar el mismo contenido como followup privado (`is_private = 1`), sin tocar `status`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
-Si el score es menor a 80, no publicar este comentario.
+
+- **Score <= 70**: no publicar este comentario.
 
 ### 6.4 — Actualizar el estado del ticket (excepciones puntuales a "nunca modificar status")
 
 Por regla general este flujo no toca `status`. Hay exactamente dos excepciones, según cómo terminó el ticket en esta corrida:
 
-**Caso A — Se publicó el comentario de solución (6.3, score >= 80):** dejar el ticket en Planificado (status = 3), asignado al técnico kvelasco.
+**Caso A — Se aplicó el comentario como solución del ticket (6.3, score > 90):** dejar el ticket en Resuelto (status = 5), asignado al técnico kvelasco.
 ```sql
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
-    impact = {impact_id}, priority = {priority_id}, status = 3, date_mod = NOW()
+    impact = {impact_id}, priority = {priority_id}, status = 5, date_mod = NOW()
 WHERE id = {ticket_id};
 ```
 La asignación de técnico vive en `glpi_tickets_users` (`type = 2` = asignado), no en `glpi_tickets`. Antes de insertar, verificar con un `SELECT` si ya existe una fila `type = 2` para este `tickets_id` (para no duplicar en corridas repetidas de un mismo ticket):
@@ -363,11 +375,17 @@ VALUES ({ticket_id}, {ID_KVELASCO}, 2);
 UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
 ```
 
-**Caso B — El ticket quedó con triage de preguntas (`estado_procesamiento = 'preguntas_enviadas'`):** dejar el ticket en Nuevo (status = 1), sin ningún técnico asignado.
+**Caso B — El ticket quedó con triage de preguntas (`estado_procesamiento = 'preguntas_enviadas'`):** dejar el ticket en En espera (status = 4), asignado al técnico kvelasco.
 ```sql
-UPDATE glpi_tickets SET status = 1, date_mod = NOW() WHERE id = {ticket_id};
-
-DELETE FROM glpi_tickets_users WHERE tickets_id = {ticket_id} AND type = 2;
+UPDATE glpi_tickets SET status = 4, date_mod = NOW() WHERE id = {ticket_id};
+```
+La asignación de técnico vive en `glpi_tickets_users` (`type = 2` = asignado), no en `glpi_tickets`. Antes de insertar, verificar con un `SELECT` si ya existe una fila `type = 2` para este `tickets_id` (para no duplicar en corridas repetidas de un mismo ticket):
+```sql
+-- si no existe fila type=2 para este ticket:
+INSERT INTO glpi_tickets_users (tickets_id, users_id, type)
+VALUES ({ticket_id}, {ID_KVELASCO}, 2);
+-- si ya existe, actualizarla en vez de insertar:
+UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
 ```
 
 **Cualquier otro caso** (`proyecto_no_registrado`, `esperando_respuesta_cliente`, `ok_baja_confianza`, `error`): no tocar `status` ni la asignación — sigue aplicando la regla original.
@@ -436,11 +454,11 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 
 ## Reglas críticas (aplican siempre, sin excepción)
 
-- Nunca modificar `status`, salvo las dos excepciones puntuales del Paso 6.4 (solución publicada → Planificado + asignado a kvelasco; triage de preguntas → Nuevo sin asignar). Fuera de esos dos casos, `status` no se toca.
+- Nunca modificar `status`, salvo las dos excepciones puntuales del Paso 6.4 (solución aplicada, score > 90 → Resuelto + asignado a kvelasco; triage de preguntas → En espera + asignado a kvelasco). Fuera de esos dos casos, `status` no se toca.
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
-- Nunca publicar el comentario de solución (6.3) si el score de acertividad es menor a 80.
+- Nunca aplicar el comentario como solución del ticket (6.3) si el score de acertividad es 90 o menor. Nunca publicar el comentario de respuesta como followup (6.3) si el score es 70 o menor.
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
