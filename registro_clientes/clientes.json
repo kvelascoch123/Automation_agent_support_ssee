@@ -1,8 +1,11 @@
 {
-  "UNNOPARTS": { "owner": "unnoparts", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
-  "INDUMOT": { "owner": "indumot", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" },
+  "ACTUARIA CONSULTORES S.A": { "owner": "actuaria", "repo": "ActuariaCodigoCompleto" , "openbravo_db_alias": "actuaria" },
+  "GAYATA": { "owner": "gayata", "repo": "CodigoCompletoGayata" , "openbravo_db_alias": "gayata" },
   "HAPPYCELL": { "owner": "happycell", "repo": "CodigoCompletoHappy" , "openbravo_db_alias": "happycell" },
   "HAPPYPAY": { "owner": "happypay", "repo": "CodigoCompletoHappyPay" , "openbravo_db_alias": "happypay" },
-  "ACTUARIA CONSULTORES S.A": { "owner": "actuaria", "repo": "ActuariaCodigoCompleto" , "openbravo_db_alias": "actuaria" }
-  //UNNOPARTS-DEMO": { "owner": "unnoparts", "repo": "Unnoparts-Agente-Soporte", "openbravo_db_alias": "unnoparts" },
+  "SANFELIPE": { "owner": "sanfelipe", "repo": "CodigoCompletoSanFelipe", "openbravo_db_alias": "sanfelipe" },
+  "TEXTICOM": { "owner": "texticom", "repo": "CodigoCompletoTexticom", "openbravo_db_alias": "texticom" },
+  "UNNOPARTS": { "owner": "unnoparts", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
+  "MEDINUCLEAR": { "owner": "medinuclear", "repo": "MediNuclearCodigoCompleto", "openbravo_db_alias": "medinuclear" },
+  "INDUMOT": { "owner": "indumot", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" },
 }
