@@ -1,6 +1,6 @@
 ---
 name: triage-glpi-auto
-description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI.
+description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI. Maneja además dos casos que cortan el flujo de análisis: solicitudes de Capacitación (comentario público CX, estado Planificado, asignado a kvelasco, campo Fuente de solicitud = Capacitación) y Proyecto no registrado (marcador [TRIAGE-PROYECTO-NO-REGISTRADO], estado Planificado, asignado a bruno díaz).
 ---
 
 # Agente Orquestador de Triage GLPI — ejecución automática (cron)
@@ -79,8 +79,39 @@ Si el solicitante puede tener más de un proyecto asignado en el campo plugin (m
 Si la consulta no devuelve proyecto (`proyecto` vacío): registrar en el log `estado_procesamiento = 'proyecto_no_registrado'` y no procesar más este ticket en esta corrida.
 
 2. Buscar el proyecto obtenido como clave exacta en `registro_clientes/clientes.json` (Paso 0).
-   - **No existe esa clave** → el proyecto no está habilitado en el registro. Registrar en el log `estado_procesamiento = 'proyecto_no_registrado'` y no procesar más este ticket en esta corrida.
+   - **No existe esa clave** → el proyecto no está habilitado en el registro. Registrar en el log `estado_procesamiento = 'proyecto_no_registrado'`, aplicar el Paso 2-A, y no procesar más este ticket en esta corrida.
    - **Existe** → obtener `{owner, repo}` de esa entrada y continuar al Paso 3.
+
+Si el propio Paso 2, punto 1, ya terminó sin proyecto (consulta vacía), aplica el mismo tratamiento: registrar `estado_procesamiento = 'proyecto_no_registrado'` y aplicar el Paso 2-A.
+
+---
+
+## Paso 2-A — Acciones cuando el proyecto no está registrado (Caso Proyecto no registrado)
+
+Cuando el Paso 2 termina con `estado_procesamiento = 'proyecto_no_registrado'` (proyecto no resuelto para el solicitante, o resuelto pero sin entrada en `clientes.json`):
+
+1. Publicar un comentario privado (`is_private = 1`) iniciando con el marcador literal `[TRIAGE-PROYECTO-NO-REGISTRADO]`, indicando que el proyecto del solicitante no está registrado/habilitado en el flujo automático y que el ticket queda para revisión manual.
+```sql
+INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
+VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '[TRIAGE-PROYECTO-NO-REGISTRADO] {detalle}', 1, 0, NOW(), NOW(), 1);
+```
+
+2. Actualizar el estado del ticket a **En curso (planificado)** (`status = 3`) y asignar el técnico al usuario **bruno díaz**:
+```sql
+UPDATE glpi_tickets SET status = 3, date_mod = NOW() WHERE id = {ticket_id};
+```
+La asignación vive en `glpi_tickets_users` (`type = 2`), mismo patrón de verificación que el resto del flujo:
+```sql
+-- si no existe fila type=2 para este ticket:
+INSERT INTO glpi_tickets_users (tickets_id, users_id, type)
+VALUES ({ticket_id}, {ID_BRUNODIAZ}, 2);
+-- si ya existe, actualizarla en vez de insertar:
+UPDATE glpi_tickets_users SET users_id = {ID_BRUNODIAZ} WHERE tickets_id = {ticket_id} AND type = 2;
+```
+
+3. No ejecutar el resto del flujo (Paso 3 en adelante) para este ticket en esta corrida — ya quedó registrado y asignado para revisión manual.
+
+**Nota:** `{ID_BRUNODIAZ}` debe reemplazarse por el ID numérico real del usuario bruno díaz en GLPI (mismo procedimiento que `{ID_KVELASCO}`, ver Nota del Paso 6.4), antes de usar esta skill en producción.
 
 ---
 
@@ -89,11 +120,25 @@ Si la consulta no devuelve proyecto (`proyecto` vacío): registrar en el log `es
 Usando `{owner, repo}` resuelto en el Paso 2, invocar la herramienta MCP de GitHub (`get_file_contents` o la que exponga el MCP configurado) para leer directamente, vía API, sin descargar el repo completo:
 
 - `config_agent_support/cliente.json` (reglas propias del cliente, si difieren del estándar: SLA, umbrales, etc.)
+- `config_agent_support/integraciones.json` (o el archivo equivalente que exista en ese repo — ver Paso 3-C) — registro de integraciones/desarrollos externos del cliente que escriben datos directamente en Openbravo.
 - Archivos de customización/documentación relevantes de ese repo (ej. `customizaciones/*.md`) que ayuden al diagnóstico
 
 **Nota:** `graphify-out/` (el grafo de código) vive en el repo del CLIENTE (ej. `Unnoparts-Agente-Soporte`), no en el orquestador — es específico del código de cada instalación de Openbravo. Por eso los comandos `graphify query/path/explain` del Paso 5 solo tienen sentido una vez que el agente está operando en el contexto del cliente correcto (ya resuelto en el Paso 2).
 
 Si alguno de estos archivos no existe en ese repo, continuar el análisis solo con el conocimiento común (las skills del repo orquestador) y anotarlo en el comentario privado de análisis del Paso 6.
+
+---
+
+## Paso 3-C — Verificar si el módulo/ventana afectada tiene una integración externa registrada
+
+Existe para impedir un fallo concreto ya ocurrido: un ticket reportaba que no había comprobantes de retención de un mes cargados en Openbravo, y el análisis concluyó que el proceso era manual y faltaba registrarlo a mano — sin detectar que un desarrollo externo (servicio que recibe datos de un tercero, ej. Taxo, y crea esos comprobantes automáticamente) es la vía normal por la que esos registros aparecen. La causa raíz real a investigar era la sincronización de ese servicio, no la falta de carga manual.
+
+1. Con `config_agent_support/integraciones.json` leído en el Paso 3 (si existe), buscar si alguna integración registrada escribe sobre el mismo módulo/ventana/tipo de documento que reporta el ticket (ej. "Comprobante de Retención" / tipo de documento "RETENCIONES CLIENTES").
+2. **Si hay match** (existe una integración registrada para esa ventana/documento): la causa raíz candidata pasa a incluir, como hipótesis principal a validar, una falla o atraso en esa sincronización — no solo "falta de registro manual". El diagnóstico del Paso 5 y la §7 (respuesta al usuario) deben pedir explícitamente verificar el estado de esa integración (último envío recibido, errores del servicio, si el tercero efectivamente envió los datos del período en cuestión) como parte de la solución, antes o junto con la opción de registrar el comprobante a mano.
+3. **Si no hay match, o `integraciones.json` no existe en el repo del cliente**: continuar el análisis solo con las hipótesis habituales (proceso manual, configuración, etc.) y anotarlo explícitamente en el comentario privado del Paso 6 — nunca asumir en silencio que no hay integración solo porque no se encontró el archivo; declararlo `SIN REGISTRO`.
+4. Este chequeo es una **fuente de evidencia obligatoria** — ver la tabla del Paso 5-A. No sirve como evidencia "no encontré integraciones" sin haber intentado leer `integraciones.json` (o el archivo equivalente) primero.
+
+**Nota:** el nombre y la ubicación exacta de este archivo por cliente (`integraciones.json` u otro) hay que confirmarlos contra la estructura real de cada repo — mismo tipo de verificación pendiente que `{ID_KVELASCO}` en el Paso 6.4. Mientras no exista ese archivo para un cliente dado, el punto 3 aplica (`SIN REGISTRO`) y conviene proponerle al cliente documentar ahí sus integraciones conocidas (nombre, ventana/tabla que alimenta, tipo de documento, cómo verificar su estado).
 
 ---
 
@@ -149,6 +194,55 @@ ORDER BY date_creation ASC;
 Si existe la tabla `sidesoft_triage_glpi_log`, revisar también el último registro por `ticket_id` para saber en qué punto del flujo quedó ese ticket en una corrida anterior.
 
 Con ese historial, evaluar en este orden:
+
+### 4.0 — Detectar caso Capacitación (corta el flujo, no entra a 4.1 en adelante)
+
+Antes de evaluar suficiencia de contexto o disparar el motor de análisis, revisar si el ticket es una **solicitud de capacitación** y no una incidencia/consulta funcional.
+
+Traer el asunto del ticket vía MCP-DB (alias `glpi`) — el payload de entrada no trae el asunto, solo `texto_limpio`:
+```sql
+SELECT name, content FROM glpi_tickets WHERE id = {ticket_id};
+```
+
+Se considera **Caso Capacitación** si el asunto (`name`) o la descripción (`content` / `texto_limpio`) contienen, sin distinguir mayúsculas ni tildes, alguna de estas raíces: `capacitac` (cubre capacitación/capacitacion/capacitaciones), `entrenamiento`, `training`.
+
+**Si aplica**, no ejecutar 4.1 en adelante ni el Paso 5 (motor de 9 pasos) para este ticket. En su lugar:
+
+1. Publicar un único comentario, **esta vez público** (`is_private = 0` — única excepción de este flujo a la regla de "todo comentario es privado", justamente porque este mensaje es para el solicitante), en tono cercano/CX, indicando que se evaluará la capacitación solicitada y que se confirmará el día:
+```sql
+INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
+VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_cx_capacitacion_html}', 0, 0, NOW(), NOW(), 1);
+```
+`{comentario_cx_capacitacion_html}` — ejemplo de tono: *"Gracias por tu solicitud. Vamos a evaluar la capacitación solicitada y te confirmaremos la fecha en la que se realizará."*
+
+2. Actualizar el estado del ticket a **En curso (planificado)** (`status = 3`) y asignar el técnico al usuario **kvelasco**:
+```sql
+UPDATE glpi_tickets SET status = 3, date_mod = NOW() WHERE id = {ticket_id};
+```
+La asignación vive en `glpi_tickets_users` (`type = 2`), mismo patrón de verificación que el resto del flujo (ver Paso 6.4):
+```sql
+-- si no existe fila type=2 para este ticket:
+INSERT INTO glpi_tickets_users (tickets_id, users_id, type)
+VALUES ({ticket_id}, {ID_KVELASCO}, 2);
+-- si ya existe, actualizarla en vez de insertar:
+UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
+```
+
+3. Actualizar el campo plugin **"Fuente de solicitud"** al valor **"Capacitación"**:
+```sql
+-- ⚠️ Verificar con pg_describe_table (alias glpi) el nombre real de la tabla/columna plugin de
+-- "Fuente de solicitud" y el id del valor "Capacitación" en su tabla de dropdown asociada,
+-- antes de usar esta skill en producción — igual que {ID_KVELASCO} (ver Nota del Paso 6.4).
+UPDATE {tabla_plugin_fuente_solicitud}
+SET {columna_fuente_solicitud} = {ID_VALOR_CAPACITACION}
+WHERE items_id = {ticket_id};
+-- si no existe fila para este ticket en esa tabla plugin, hacer INSERT en su lugar.
+```
+
+4. Registrar en `sidesoft_triage_glpi_log`: `estado_procesamiento = 'capacitacion'`.
+5. Terminar el procesamiento de este ticket en esta corrida — no continuar a 4.1, Paso 5 ni Paso 6.
+
+**Si no aplica**, continuar en 4.1.
 
 ### 4.1 — ¿Ya se enviaron preguntas de aclaración antes?
 Buscar entre los followups un comentario (privado) que inicie con el marcador `[TRIAGE-ACLARACION]`.
@@ -260,6 +354,7 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 | `Detalles Adicionales:` de imágenes (Paso 3-A) | LEÍDO / SIN IMÁGENES | identificador(es) extraído(s) usado(s) como filtro, o motivo de no viable |
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO | archivo y contenido relevante |
+| Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
 
 No sirve como dato probatorio: una cita de la memoria, una conclusión de una corrida anterior, ni una descripción genérica del archivo. Sirve un número, un nombre de archivo o un fragmento que solo se puede conocer habiéndolo abierto ahora.
 
@@ -300,7 +395,7 @@ Producto esperado: el documento completo de 9 secciones (Clasificación, Entendi
 
 ## Paso 6 — Publicar los comentarios, TODOS PRIVADOS (sin confirmación — ejecución automática)
 
-Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.glpi`. **Todos los comentarios de este flujo se publican con `is_private = 1` — ninguno es visible para el solicitante/cliente en GLPI.**
+Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.glpi`. **Todos los comentarios de este flujo se publican con `is_private = 1` — ninguno es visible para el solicitante/cliente en GLPI**, salvo el comentario CX del Caso Capacitación (Paso 4.0), que se publica con `is_private = 0` por diseño.
 
 **Cambio: ya no se publica comentario de "primer contacto".** El flujo pasa directo del análisis al comentario de SLA+Score. Quedan 3 comentarios en total (antes eran 5).
 
@@ -340,14 +435,20 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_ht
 
 Evaluar el score de acertividad (calculado en 6.1, sobre la §7 del análisis del Paso 5) para decidir qué publicar:
 
-- **Score > 90**: el contenido de la respuesta se aplica como **solución del ticket** (tabla `glpi_itilsolutions`), no como followup. El cambio de `status` a Resuelto se aplica en el Paso 6.4, Caso A.
+- **Score >= 90**: el contenido `[TRIAGE-RESPUESTA-SUGERIDA]` se aplica como **solución del ticket** (tabla `glpi_itilsolutions`), no como followup. El cambio de `status` a Resuelto y la asignación a kvelasco se aplican en el Paso 6.4, Caso A.
 ```sql
 INSERT INTO glpi_itilsolutions (itemtype, items_id, solutiontypes_id, content, date_creation, date_mod, users_id, status)
 VALUES ('Ticket', {ticket_id}, 0, '{comentario_publico_respuesta_formateada}', NOW(), NOW(), 148, 1);
 ```
 **Nota:** verificar contra el esquema real de GLPI (`pg_describe_table`/equivalente) los nombres de columna de `glpi_itilsolutions` antes de usar esta skill en producción — igual que `{ID_KVELASCO}`, no confirmado en esta corrección.
 
-- **Score > 70 y <= 90**: publicar el mismo contenido como followup privado (`is_private = 1`), sin tocar `status`.
+- **Score > 80 y < 90**: publicar el mismo contenido como followup privado (`is_private = 1`). Además, el cambio de `status` a Planificado y la asignación a kvelasco se aplican en el Paso 6.4, Caso A-1.
+```sql
+INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
+VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
+```
+
+- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`), sin tocar `status`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
@@ -364,6 +465,22 @@ Por regla general este flujo no toca `status`. Hay exactamente dos excepciones, 
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
     impact = {impact_id}, priority = {priority_id}, status = 5, date_mod = NOW()
+WHERE id = {ticket_id};
+```
+La asignación de técnico vive en `glpi_tickets_users` (`type = 2` = asignado), no en `glpi_tickets`. Antes de insertar, verificar con un `SELECT` si ya existe una fila `type = 2` para este `tickets_id` (para no duplicar en corridas repetidas de un mismo ticket):
+```sql
+-- si no existe fila type=2 para este ticket:
+INSERT INTO glpi_tickets_users (tickets_id, users_id, type)
+VALUES ({ticket_id}, {ID_KVELASCO}, 2);
+-- si ya existe, actualizarla en vez de insertar:
+UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
+```
+
+**Caso A-1 — Score de acertividad mayor a 80 y menor a 90 (6.3):** dejar el ticket en En curso (planificado) (status = 3), asignado al técnico kvelasco.
+```sql
+UPDATE glpi_tickets
+SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
+    impact = {impact_id}, priority = {priority_id}, status = 3, date_mod = NOW()
 WHERE id = {ticket_id};
 ```
 La asignación de técnico vive en `glpi_tickets_users` (`type = 2` = asignado), no en `glpi_tickets`. Antes de insertar, verificar con un `SELECT` si ya existe una fila `type = 2` para este `tickets_id` (para no duplicar en corridas repetidas de un mismo ticket):
@@ -448,18 +565,18 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
-Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score >= 80), `ok_baja_confianza` (score < 80), `error`.
+Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score >= 80), `ok_baja_confianza` (score < 80), `error`.
 
 ---
 
 ## Reglas críticas (aplican siempre, sin excepción)
 
-- Nunca modificar `status`, salvo las dos excepciones puntuales del Paso 6.4 (solución aplicada, score > 90 → Resuelto + asignado a kvelasco; triage de preguntas → En espera + asignado a kvelasco). Fuera de esos dos casos, `status` no se toca.
+- Nunca modificar `status`, salvo las excepciones puntuales ya definidas en esta skill: Caso Capacitación (Paso 4.0 → En curso (planificado) + asignado a kvelasco), Caso Proyecto no registrado (Paso 2-A → En curso (planificado) + asignado a bruno díaz), score >= 90 (Paso 6.4 Caso A → Resuelto + asignado a kvelasco), score > 80 y < 90 (Paso 6.4 Caso A-1 → En curso (planificado) + asignado a kvelasco), y triage de preguntas (Paso 6.4 Caso B → En espera + asignado a kvelasco). Fuera de esos casos, `status` no se toca.
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
-- Nunca aplicar el comentario como solución del ticket (6.3) si el score de acertividad es 90 o menor. Nunca publicar el comentario de respuesta como followup (6.3) si el score es 70 o menor.
-- Todos los comentarios publicados por este flujo son privados (`is_private = 1`) — ninguno llega al solicitante dentro de GLPI.
+- Nunca aplicar el comentario `[TRIAGE-RESPUESTA-SUGERIDA]` como solución del ticket (6.3) si el score de acertividad es menor a 90. Nunca publicar el comentario de respuesta como followup (6.3) si el score es 70 o menor.
+- Todos los comentarios publicados por este flujo son privados (`is_private = 1`), con una única excepción: el comentario CX del Caso Capacitación (Paso 4.0), que se publica público (`is_private = 0`) porque va dirigido al solicitante. Fuera de ese caso, ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — regla dura heredada de `openbravo-triage-tecnico` en modo automático.
@@ -468,4 +585,5 @@ Valores posibles de `estado_procesamiento`: `proyecto_no_registrado`, `preguntas
 - Nunca dar por buena la respuesta `Insert successful` del MCP-DB: todo id se confirma con un `SELECT` posterior, en una llamada aparte (Paso 6-A).
 - Nunca usar `Detalles Adicionales:` de una imagen tal cual, sin pasar por el filtrado del Paso 3-A, como valor literal de un `WHERE` — solo los campos identificados como identificador/monto/fecha concretos, nunca ruido de etiquetas o texto decorativo.
 - La memoria del Automation nunca cancela un paso obligatorio: solo abarata su ejecución (Paso 5-A). Ante contradicción entre la memoria y lo observado en esta corrida, gana lo observado, y la memoria se corrige en el momento.
+- Nunca declarar una causa raíz de "falta de registro/proceso manual" para datos ausentes en una ventana/tabla sin antes revisar (Paso 3-C) si existe una integración externa registrada del cliente que normalmente alimenta esa misma ventana — si existe, la sincronización de esa integración es una hipótesis de causa raíz que debe evaluarse y reflejarse en la §7, no descartarse por defecto.
 - Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
