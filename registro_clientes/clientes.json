@@ -1,11 +1,11 @@
 {
-  "ACTUARIA CONSULTORES S.A": { "owner": "Sidesoftpreprod", "repo": "ActuariaCodigoCompleto" , "openbravo_db_alias": "actuaria" },
-  "GAYATA": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoGayata" , "openbravo_db_alias": "gayata" },
-  "HAPPYCELL": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappy" , "openbravo_db_alias": "happycell" },
-  "HAPPYPAY": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappyPay" , "openbravo_db_alias": "happypay" },
-  "SANFELIPE": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoSanFelipe", "openbravo_db_alias": "sanfelipe" },
-  "TEXTICOM": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoTexticom", "openbravo_db_alias": "texticom" },
-  "UNNOPARTS": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
-  "MEDINUCLEAR": { "owner": "Sidesoftpreprod", "repo": "MediNuclearCodigoCompleto", "openbravo_db_alias": "medinuclear" },
-  "INDUMOT": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" },
+  "ACTUARIA CONSULTORES S.A": { "owner": "Sidesoftpreprod", "repo": "ActuariaCodigoCompleto", "base_path": "actuaria", "config_dir": null, "openbravo_db_alias": "actuaria" },
+  "GAYATA": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoGayata", "base_path": null, "config_dir": null, "openbravo_db_alias": "gayata" },
+  "HAPPYCELL": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappy", "base_path": null, "config_dir": null, "openbravo_db_alias": "happycell" },
+  "HAPPYPAY": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappyPay", "base_path": null, "config_dir": null, "openbravo_db_alias": "happypay" },
+  "SANFELIPE": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoSanFelipe", "base_path": null, "config_dir": null, "openbravo_db_alias": "sanfelipe" },
+  "TEXTICOM": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoTexticom", "base_path": null, "config_dir": null, "openbravo_db_alias": "texticom" },
+  "UNNOPARTS": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoUnnoParts", "base_path": null, "config_dir": null, "openbravo_db_alias": "unnoparts" },
+  "MEDINUCLEAR": { "owner": "Sidesoftpreprod", "repo": "MediNuclearCodigoCompleto", "base_path": null, "config_dir": null, "openbravo_db_alias": "medinuclear" },
+  "INDUMOT SA": { "owner": "kvelascoch123", "repo": "CodigoCompletoIndumot", "base_path": null, "config_dir": null, "openbravo_db_alias": "indumot" }
 }
