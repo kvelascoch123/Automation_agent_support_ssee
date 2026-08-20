@@ -7,5 +7,5 @@
   "TEXTICOM": { "owner": "texticom", "repo": "CodigoCompletoTexticom", "openbravo_db_alias": "texticom" },
   "UNNOPARTS": { "owner": "unnoparts", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
   "MEDINUCLEAR": { "owner": "medinuclear", "repo": "MediNuclearCodigoCompleto", "openbravo_db_alias": "medinuclear" },
-  "INDUMOT": { "owner": "indumot", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" },
+  "INDUMOT SA": { "owner": "kvelascoch123", "repo": "CodigoCompletoIndumot", "openbravo_db_alias": "indumot" }
 }
