@@ -31,24 +31,29 @@ Leer `registro_clientes/clientes.json` en la raíz del repo orquestador (lectura
   "UNNOPARTS": {
     "owner": "tuorg",
     "repo": "Unnoparts-Agente-Soporte",
+    "base_path": null,
+    "config_dir": null,
     "openbravo_db_alias": null
   },
-  "SAN FELIPE": {
-    "owner": "tuorg",
-    "repo": "SanFelipe-Agente-Soporte",
-    "openbravo_db_alias": null
-  },
-  "ACTUARIA": {
-    "owner": "tuorg",
-    "repo": "Actuaria-Agente-Soporte",
-    "openbravo_db_alias": null
+  "ACTUARIA CONSULTORES S.A": {
+    "owner": "Sidesoftpreprod",
+    "repo": "ActuariaCodigoCompleto",
+    "base_path": "actuaria",
+    "config_dir": "registro_clientes/actuaria",
+    "openbravo_db_alias": "actuaria"
   }
 }
 ```
 
+Cada entrada resuelve tres cosas distintas, que **nunca se derivan unas de otras** — hay que leerlas todas de acá, explícitamente, y no asumir ninguna por default:
+
+- **`owner` / `repo`**: el **repo de código** del cliente — donde vive el código fuente real de Openbravo (`src-db`, `src-core`, `modules`, etc.) y `graphify-out/`. Es lo que usan el Paso 3-C y el Paso 5. **Tiene que ser el owner real de GitHub** (el que aparece en la URL del repo) — un owner mal cargado acá (ej. `"actuaria"` en vez de `"Sidesoftpreprod"`) produce 404 a nivel de repositorio completo, indistinguible a simple vista de un problema de permisos, y es el primer punto a revisar cuando algo da `REPO_INACCESIBLE` (Paso 2-B).
+- **`base_path`** (opcional, string o `null`): la carpeta dentro de ese repo donde arranca el código, si no está en la raíz. Con Actuaria, todo el árbol de Openbravo está anidado bajo `actuaria/`, no en la raíz del repo. Si el repo trae el código directo en la raíz, dejarlo en `null` y el Paso 2-B lo detecta solo.
+- **`config_dir`** (opcional, string o `null`): ruta **dentro del propio repo orquestador**, relativa a su raíz, donde vive la configuración específica de ese cliente — `cliente.json` (reglas propias), `integraciones.json` (desarrollos externos, ver Paso 3-C), `customizaciones/*.md`. Es una subcarpeta de `registro_clientes/` (ej. `registro_clientes/actuaria/`), **no un repo aparte**: se lee local, igual que `clientes.json`, sin MCP de GitHub y sin el riesgo de un owner/repo mal cargado en un tercer repositorio. Si es `null`, el Paso 3 no busca esos archivos en ningún lado y lo registra como "sin `config_dir` configurado" — estado legítimo, no error.
+
 `openbravo_db_alias` identifica la BD de Openbravo (PostgreSQL) de ese cliente para verificaciones contables — es el valor de la columna "ALIAS MCP" del Panel MCP (https://mcp-db.sidesoftcorp.com/admin/databases), no un nombre inventado. El servidor MCP-DB ya está activo para todos los alias ahí listados; lo único pendiente por cliente es completar este campo en `clientes.json` con el alias exacto (ver Paso 3-B para cómo se usa). Mientras esté en `null`, el análisis procede solo con conocimiento estático, sin verificación en BD real.
 
-Este registro es la única fuente de verdad de qué proyectos GLPI están habilitados y a qué repo corresponde cada uno. Agregar un cliente nuevo = una entrada nueva aquí — no requiere tocar esta skill.
+Este registro es la única fuente de verdad de qué proyectos GLPI están habilitados y a qué repo, `base_path` y `config_dir` corresponde cada uno. Agregar un cliente nuevo = una entrada nueva aquí (y su carpeta `registro_clientes/<cliente>/` si aplica) — no requiere tocar esta skill.
 
 También leer, del propio repo orquestador (conocimiento común, aplica a todos los clientes):
 - Las skills `openbravo-triage-tecnico` y `openbravo-soporte-sidesoft` (viven en `.cursor/skills/` del repo orquestador junto a esta)
@@ -115,17 +120,66 @@ UPDATE glpi_tickets_users SET users_id = {ID_BRUNODIAZ} WHERE tickets_id = {tick
 
 ---
 
-## Paso 3 — Leer el contexto específico del cliente (sin clonar)
+## Paso 2-B — Verificar acceso al repo de código y determinar el `base_path`
 
-Usando `{owner, repo}` resuelto en el Paso 2, invocar la herramienta MCP de GitHub (`get_file_contents` o la que exponga el MCP configurado) para leer directamente, vía API, sin descargar el repo completo:
+Existe para impedir dos fallos concretos ya ocurridos, distintos entre sí aunque ambos se vean como "no encontré el archivo":
 
-- `config_agent_support/cliente.json` (reglas propias del cliente, si difieren del estándar: SLA, umbrales, etc.)
-- `config_agent_support/integraciones.json` (o el archivo equivalente que exista en ese repo — ver Paso 3-C) — registro de integraciones/desarrollos externos del cliente que escriben datos directamente en Openbravo.
-- Archivos de customización/documentación relevantes de ese repo (ej. `customizaciones/*.md`) que ayuden al diagnóstico
+1. Para el cliente ACTUARIA, el repo de código (`Sidesoftpreprod/ActuariaCodigoCompleto`) **sí existe y es accesible**, pero todo el árbol real de Openbravo (`src-db`, `src-core`, `modules`, `graphify-out`) está anidado bajo una carpeta `actuaria/`, no en la raíz. La skill asumía raíz por defecto, así que cada lectura fallaba con 404 aunque el repo estuviera perfectamente accesible.
+2. Independiente de eso, un repo puede directamente no ser accesible (404 a nivel de repositorio, no de archivo) — típicamente porque `clientes.json` tiene el `owner`/`repo` mal cargado, o porque el token/App de GitHub del MCP no tiene ese repo privado habilitado.
 
-**Nota:** `graphify-out/` (el grafo de código) vive en el repo del CLIENTE (ej. `Unnoparts-Agente-Soporte`), no en el orquestador — es específico del código de cada instalación de Openbravo. Por eso los comandos `graphify query/path/explain` del Paso 5 solo tienen sentido una vez que el agente está operando en el contexto del cliente correcto (ya resuelto en el Paso 2).
+Ambos casos se ven igual si no se los distingue explícitamente — este paso separa uno de otro **antes** de que el Paso 3-C o el Paso 5 intenten leer nada.
 
-Si alguno de estos archivos no existe en ese repo, continuar el análisis solo con el conocimiento común (las skills del repo orquestador) y anotarlo en el comentario privado de análisis del Paso 6.
+### 1. Verificar acceso al repo
+Hacer una llamada liviana al MCP de GitHub contra `{owner, repo}` (repo de código) resuelto en el Paso 2 — listar la raíz del repo (`get_file_contents` con path vacío).
+
+- **Si devuelve 404 a nivel de repositorio** (no de un archivo puntual): registrar `REPO_INACCESIBLE` en la sección 9 (nunca `OMITIDO`), publicar un comentario privado adicional con el marcador `[TRIAGE-REPO-INACCESIBLE]` señalando que `registro_clientes/clientes.json` tiene un `{owner, repo}` inválido o sin permisos para este cliente y necesita corrección manual, y continuar el análisis solo con conocimiento estático. **No seguir al punto 2** — sin acceso al repo no hay nada que detectar.
+- **Si responde con el listado de la raíz**: continuar al punto 2.
+
+### 2. Determinar el `base_path` (dónde arranca el código Openbravo real)
+
+- **Si `clientes.json` ya trae `base_path` cargado** para este cliente (ej. `"actuaria"` para ACTUARIA): usarlo directo, sin detectar nada. Ir al punto 3.
+- **Si `base_path` es `null` o no está**, auto-detectar con el listado de la raíz ya obtenido en el punto 1:
+  a. Revisar si alguna carpeta típica de un repo de Openbravo (`src-db`, `src-core`, `modules`, `graphify-out`) aparece **directamente en la raíz**. Si aparece al menos una → el código está en la raíz, `base_path = ""` para esta corrida.
+  b. Si ninguna aparece en la raíz, listar las carpetas de primer nivel una por una y revisar si **exactamente una** de ellas contiene, un nivel más abajo, alguna de esas mismas carpetas típicas (como `actuaria/` en este caso, que contiene `src-db`, `src-core`, `modules`, `graphify-out`). Si hay exactamente una candidata → usarla como `base_path` para esta corrida.
+  c. **Si hay cero candidatas, o hay más de una** (ambigüedad — no se puede decidir solo): no asumir ninguna. Registrar `ESTRUCTURA_NO_DETECTADA` en la sección 9, publicar comentario privado señalando la ambigüedad encontrada (listar las carpetas candidatas, si las hubo), y continuar sin graphify/código para esta corrida — mismo tratamiento de fondo que `OMITIDO`, pero con motivo explícito y distinguible.
+  d. Cuando la auto-detección sí resuelve un `base_path` (casos a o b), anotarlo en el comentario privado de análisis como sugerencia para cargarlo en `clientes.json` y ahorrarse la detección en corridas futuras de ese mismo cliente.
+
+### 3. Usar el `base_path` resuelto
+Todas las lecturas del Paso 3-C y del Paso 5 (graphify, código fuente) se hacen prefijando `{base_path}/` a la ruta que pedían antes (ej. `{base_path}/graphify-out/manifest.json`, `{base_path}/src-db/...`). Si `base_path` quedó en `""`, es exactamente el comportamiento que la skill ya tenía (rutas desde la raíz).
+
+---
+
+## Paso 2-C — Fijar el contexto resuelto del cliente para toda la corrida
+
+Con el Paso 2 (proyecto → cliente) y el Paso 2-B (acceso + `base_path`) ya resueltos, consolidar todo en un único bloque antes de seguir — cada paso siguiente **lee de acá**, no vuelve a derivar nada por su cuenta:
+
+```
+contexto_cliente = {
+  proyecto:            {proyecto resuelto en el Paso 2},
+  owner, repo:         {repo de código, Paso 2 / clientes.json},
+  base_path:           {resuelto en el Paso 2-B — "" si el código está en la raíz},
+  openbravo_db_alias:  {de clientes.json, o null},
+  config_dir:          {de clientes.json, o null — carpeta local en el repo orquestador}
+}
+```
+
+Este bloque es lo que efectivamente viaja al resto del flujo (Paso 3 usa `config_dir`; Paso 3-B usa `openbravo_db_alias`; Paso 3-C y Paso 5 usan `owner`/`repo`/`base_path`). Ningún paso posterior vuelve a leer `clientes.json` desde cero ni reinterpreta el proyecto — todos consumen este mismo objeto ya resuelto, para evitar que una corrida use un dato de un cliente y otra un dato de otro por error de contexto entre pasos.
+
+---
+
+## Paso 3 — Leer la configuración específica del cliente
+
+`cliente.json`, `integraciones.json` y `customizaciones/*.md` viven **en el propio repo orquestador**, bajo `config_dir` (ej. `registro_clientes/actuaria/`) — no en el repo de código del cliente. Es una lectura local, igual que `clientes.json` en el Paso 0, sin MCP de GitHub:
+
+- **Si `contexto_cliente.config_dir` está definido**: leer de ahí, localmente:
+  - `{config_dir}/cliente.json` (reglas propias del cliente, si difieren del estándar: SLA, umbrales, etc.)
+  - `{config_dir}/integraciones.json` — registro de integraciones/desarrollos externos del cliente que escriben datos directamente en Openbravo (ver Paso 3-C).
+  - Archivos de customización/documentación relevantes (ej. `{config_dir}/customizaciones/*.md`) que ayuden al diagnóstico.
+- **Si `config_dir` es `null` o no está**: no intentar leer estos archivos en ningún lado. Registrar en la sección 9 "sin `config_dir` configurado" — es un estado legítimo, no un error ni un intento fallido — y continuar el análisis solo con el conocimiento común (las skills del repo orquestador).
+
+**Nota:** `graphify-out/` y el código fuente **sí** viven en el repo de código (`contexto_cliente.owner`/`repo`, con `base_path`) — es específico de cada instalación de Openbravo, y es un repo distinto del orquestador. No mezclar las rutas de uno con las del otro.
+
+Si alguno de los archivos de este paso no existe bajo `config_dir` (pero la carpeta sí), continuar el análisis solo con el conocimiento común y anotarlo en el comentario privado de análisis del Paso 6 — eso sigue siendo `OMITIDO` normal.
 
 ---
 
@@ -133,9 +187,9 @@ Si alguno de estos archivos no existe en ese repo, continuar el análisis solo c
 
 Existe para impedir un fallo concreto ya ocurrido: un ticket reportaba que no había comprobantes de retención de un mes cargados en Openbravo, y el análisis concluyó que el proceso era manual y faltaba registrarlo a mano — sin detectar que un desarrollo externo (servicio que recibe datos de un tercero, ej. Taxo, y crea esos comprobantes automáticamente) es la vía normal por la que esos registros aparecen. La causa raíz real a investigar era la sincronización de ese servicio, no la falta de carga manual.
 
-1. Con `config_agent_support/integraciones.json` leído en el Paso 3 (si existe), buscar si alguna integración registrada escribe sobre el mismo módulo/ventana/tipo de documento que reporta el ticket (ej. "Comprobante de Retención" / tipo de documento "RETENCIONES CLIENTES").
+1. Con `{config_dir}/integraciones.json` leído en el Paso 3 (si existe), buscar si alguna integración registrada escribe sobre el mismo módulo/ventana/tipo de documento que reporta el ticket (ej. "Comprobante de Retención" / tipo de documento "RETENCIONES CLIENTES").
 2. **Si hay match** (existe una integración registrada para esa ventana/documento): la causa raíz candidata pasa a incluir, como hipótesis principal a validar, una falla o atraso en esa sincronización — no solo "falta de registro manual". El diagnóstico del Paso 5 y la §7 (respuesta al usuario) deben pedir explícitamente verificar el estado de esa integración (último envío recibido, errores del servicio, si el tercero efectivamente envió los datos del período en cuestión) como parte de la solución, antes o junto con la opción de registrar el comprobante a mano.
-3. **Si no hay match, o `integraciones.json` no existe en el repo del cliente**: continuar el análisis solo con las hipótesis habituales (proceso manual, configuración, etc.) y anotarlo explícitamente en el comentario privado del Paso 6 — nunca asumir en silencio que no hay integración solo porque no se encontró el archivo; declararlo `SIN REGISTRO`.
+3. **Si no hay match, o `integraciones.json` no existe (o no hay `config_dir` configurado para este cliente)**: continuar el análisis solo con las hipótesis habituales (proceso manual, configuración, etc.) y anotarlo explícitamente en el comentario privado del Paso 6 — nunca asumir en silencio que no hay integración solo porque no se encontró el archivo; declararlo `SIN REGISTRO`.
 4. Este chequeo es una **fuente de evidencia obligatoria** — ver la tabla del Paso 5-A. No sirve como evidencia "no encontré integraciones" sin haber intentado leer `integraciones.json` (o el archivo equivalente) primero.
 
 **Nota:** el nombre y la ubicación exacta de este archivo por cliente (`integraciones.json` u otro) hay que confirmarlos contra la estructura real de cada repo — mismo tipo de verificación pendiente que `{ID_KVELASCO}` en el Paso 6.4. Mientras no exista ese archivo para un cliente dado, el punto 3 aplica (`SIN REGISTRO`) y conviene proponerle al cliente documentar ahí sus integraciones conocidas (nombre, ventana/tabla que alimenta, tipo de documento, cómo verificar su estado).
@@ -173,6 +227,7 @@ Si la clasificación del ticket (aplicando la taxonomía de `openbravo-soporte-s
 2. Antes de consultar tablas que no se conozcan de memoria, usar `pg_describe_table` (parámetros: `database` = alias del cliente, `table` = nombre de tabla) para confirmar el esquema real en vez de asumirlo.
 3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) siguiendo las reglas SQL de `openbravo-soporte-sidesoft`. **Si el Paso 3-A extrajo identificadores concretos, usarlos como filtro `WHERE`** (número de documento, tercero, fecha, monto) — eso convierte la verificación en una búsqueda dirigida en vez de una exploración genérica de la tabla.
 4. Usar el resultado real para confirmar o descartar la hipótesis de causa raíz antes de redactar el análisis del Paso 5.
+4-B. **Si alguna fila devuelta trae en `null` un campo que estructuralmente debería estar poblado** para que el documento/transacción opere con normalidad (ej. `c_bpartner_id` en `fin_payment_scheduledetail`, que vincula el pago con el tercero; comparar contra otras filas del mismo tipo que sí lo traen poblado), no tratar eso solo como dato de contexto de la respuesta funcional. Es evidencia de una posible **inconsistencia técnica en la fila**, y debe registrarse explícitamente como candidato de causa raíz — cruzarlo contra el vocabulario de causa raíz de `openbravo-triage-tecnico` (dato del cliente erróneo / bug real, no solo "restricción de negocio" o proceso del usuario) antes de descartarlo. Si corresponde una corrección a nivel de datos, aplicar el Paso 6-B (script de corrección sugerido, solo texto, para revisión de un técnico) — el diagnóstico no puede cerrarse únicamente con un rodeo funcional para el usuario final cuando la BD ya mostró el dato roto.
 5. Si `pg_query` falla contra el alias configurado (conexión caída, alias inexistente), usar `pg_list_databases` para confirmar qué alias están disponibles en esta corrida, registrar la incidencia en el log, y continuar sin esta verificación.
 6. Si `openbravo_db_alias` es `null` (cliente sin base Openbravo asociada), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD contable no disponible para este cliente."*
 
@@ -349,12 +404,14 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 
 | Fuente | Estado | Dato probatorio de esta corrida |
 |---|---|---|
-| `graphify-out/manifest.json` | LEÍDO / OMITIDO | nº de entradas y archivos indexados del módulo |
-| Código fuente del módulo | LEÍDO / OMITIDO | archivos y funciones concretas abiertas |
+| `graphify-out/manifest.json` | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA | nº de entradas y archivos indexados del módulo, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path` |
+| Código fuente del módulo | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA | archivos y funciones concretas abiertas, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path` |
 | `Detalles Adicionales:` de imágenes (Paso 3-A) | LEÍDO / SIN IMÁGENES | identificador(es) extraído(s) usado(s) como filtro, o motivo de no viable |
-| BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo |
-| Contexto del cliente (Paso 3) | LEÍDO / OMITIDO | archivo y contenido relevante |
+| BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo — incluir si se detectó algún `null` anómalo en campo relacional (4-B) |
+| Contexto del cliente (Paso 3) | LEÍDO / OMITIDO / SIN CONFIG_DIR CONFIGURADO | archivo y contenido relevante, o que `config_dir` es `null` en `clientes.json` |
 | Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
+
+**`OMITIDO` vs `REPO_INACCESIBLE` vs `ESTRUCTURA_NO_DETECTADA`**: no son intercambiables. `OMITIDO` es para un archivo puntual que legítimamente no existe en un repo válido y accesible. `REPO_INACCESIBLE` (Paso 2-B, punto 1) es para cuando el repo de código entero no respondió — problema de configuración en `clientes.json` (owner/repo o permisos). `ESTRUCTURA_NO_DETECTADA` (Paso 2-B, punto 2) es para cuando el repo sí es accesible pero la auto-detección de `base_path` dio cero o múltiples candidatas — no se pudo determinar dónde arranca el código, y hace falta cargar `base_path` a mano en `clientes.json`. Los tres apuntan a causas y soluciones distintas — no colapsarlos en uno solo.
 
 No sirve como dato probatorio: una cita de la memoria, una conclusión de una corrida anterior, ni una descripción genérica del archivo. Sirve un número, un nombre de archivo o un fragmento que solo se puede conocer habiéndolo abierto ahora.
 
@@ -586,4 +643,10 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca usar `Detalles Adicionales:` de una imagen tal cual, sin pasar por el filtrado del Paso 3-A, como valor literal de un `WHERE` — solo los campos identificados como identificador/monto/fecha concretos, nunca ruido de etiquetas o texto decorativo.
 - La memoria del Automation nunca cancela un paso obligatorio: solo abarata su ejecución (Paso 5-A). Ante contradicción entre la memoria y lo observado en esta corrida, gana lo observado, y la memoria se corrige en el momento.
 - Nunca declarar una causa raíz de "falta de registro/proceso manual" para datos ausentes en una ventana/tabla sin antes revisar (Paso 3-C) si existe una integración externa registrada del cliente que normalmente alimenta esa misma ventana — si existe, la sincronización de esa integración es una hipótesis de causa raíz que debe evaluarse y reflejarse en la §7, no descartarse por defecto.
+- Nunca marcar `OMITIDO` cuando el repo de código del cliente entero no respondió (404) — ese caso es `REPO_INACCESIBLE` (Paso 2-B, punto 1) y exige el comentario `[TRIAGE-REPO-INACCESIBLE]` alertando el problema de configuración en `clientes.json`. `OMITIDO` es solo para un archivo puntual ausente en un repo accesible.
+- Nunca asumir `base_path = ""` (raíz) sin haber pasado por la detección del Paso 2-B — si la auto-detección da cero o múltiples candidatas, el estado es `ESTRUCTURA_NO_DETECTADA`, no una suposición silenciosa de dónde está el código.
+- Nunca releer o reinterpretar `clientes.json` en un paso posterior al Paso 2-C — todo paso desde el 3 en adelante consume el `contexto_cliente` ya consolidado, para que un mismo ticket no termine mezclando datos resueltos de forma distinta en pasos distintos.
+- Al cargar o corregir una entrada de `clientes.json`, el `owner` tiene que copiarse literal de la URL real del repo en GitHub (`github.com/{owner}/{repo}`), nunca inventarse o abreviarse — un owner mal cargado produce `REPO_INACCESIBLE` indistinguible de un problema de permisos.
+- Nunca buscar `cliente.json`, `integraciones.json` o `customizaciones/*.md` en el repo de código del cliente — viven en el repo orquestador, bajo `config_dir` (Paso 3). Si `config_dir` es `null`, no intentar leerlos en ningún lado; registrar "sin `config_dir` configurado", no `OMITIDO`.
+- Nunca cerrar el diagnóstico solo con una explicación funcional/de proceso cuando la BD del ERP (Paso 3-B) mostró un valor `null` anómalo en un campo relacional que debería estar poblado — eso es candidato de causa raíz técnica (4-B) y, si aplica corrección de datos, debe acompañarse del script sugerido del Paso 6-B, no reemplazarlo por un rodeo funcional para el usuario final.
 - Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
