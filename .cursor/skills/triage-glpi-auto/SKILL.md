@@ -1,6 +1,6 @@
 ---
 name: triage-glpi-auto
-description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI. Maneja además dos casos que cortan el flujo de análisis: solicitudes de Capacitación (comentario público CX, estado Planificado, asignado a kvelasco, campo Fuente de solicitud = Capacitación) y Proyecto no registrado (marcador [TRIAGE-PROYECTO-NO-REGISTRADO], estado Planificado, asignado a bruno díaz).
+description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI. Maneja además dos casos que cortan el flujo de análisis: solicitudes de Capacitación (comentario público CX, estado Planificado, asignado a kvelasco, campo Fuente de solicitud = Capacitación) y Proyecto no registrado (marcador [TRIAGE-PROYECTO-NO-REGISTRADO], estado Planificado, asignado a bruno díaz). Antes de cerrar cualquier diagnóstico, aplica un módulo obligatorio de investigación de causa raíz en profundidad (trazabilidad de flujo completo, generación y descarte de hipótesis alternativas, y verificación del alcance real del patrón de datos) en vez de detenerse en la primera causa aparente.
 ---
 
 # Agente Orquestador de Triage GLPI — ejecución automática (cron)
@@ -410,6 +410,7 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo — incluir si se detectó algún `null` anómalo en campo relacional (4-B) |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO / SIN CONFIG_DIR CONFIGURADO | archivo y contenido relevante, o que `config_dir` es `null` en `clientes.json` |
 | Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
+| Alcance real del patrón (Paso 5-B, punto 5) | MEDIDO / NO APLICA | número obtenido por la consulta de dimensionamiento y la consulta usada, o el motivo por el que no aplica (causa raíz sin flujo/módulo compartido con otros registros) |
 
 **`OMITIDO` vs `REPO_INACCESIBLE` vs `ESTRUCTURA_NO_DETECTADA`**: no son intercambiables. `OMITIDO` es para un archivo puntual que legítimamente no existe en un repo válido y accesible. `REPO_INACCESIBLE` (Paso 2-B, punto 1) es para cuando el repo de código entero no respondió — problema de configuración en `clientes.json` (owner/repo o permisos). `ESTRUCTURA_NO_DETECTADA` (Paso 2-B, punto 2) es para cuando el repo sí es accesible pero la auto-detección de `base_path` dio cero o múltiples candidatas — no se pudo determinar dónde arranca el código, y hace falta cargar `base_path` a mano en `clientes.json`. Los tres apuntan a causas y soluciones distintas — no colapsarlos en uno solo.
 
@@ -428,6 +429,73 @@ Una omisión es legítima solo si es **explícita, justificada y auditable**: es
 
 ---
 
+### Paso 5-B — Profundización de causa raíz (RCA obligatorio antes de cerrar el diagnóstico)
+
+Existe para impedir un fallo concreto ya detectado por fuera del flujo automático: en el ticket 9741 (combos `BAJA-COM-AD`, San Felipe) el motor de 9 pasos llegó a una causa raíz correcta y bien evidenciada (`qtyreserved` residual por cierre de pedidos POS/autoventa sin liberar la reserva), pero la cerró como un caso puntual del producto reportado. Un análisis manual posterior, sobre un pedido distinto (`SF02-PVT-10101428`) con el mismo síntoma, profundizó un nivel más — identificó el mecanismo exacto (el módulo custom Sidesoft Dispatch Mobile completa el albarán vía funciones PL/pgSQL propias, sin pasar por el flujo estándar que sincroniza `qtyreserved`/`m_inoutline_id`) y, al correr una consulta de alcance, encontró **62.299 líneas afectadas en todo el cliente**, no un caso aislado. La causa raíz ya estaba bien identificada por el motor; lo que faltó fue el siguiente nivel de profundidad y la verificación de alcance. Este paso formaliza ese nivel adicional como obligatorio, no opcional, para todo ticket que llegue al Paso 5.
+
+Este paso **no reemplaza** el motor de 9 pasos ni cambia su estructura de salida — es una disciplina de investigación que se aplica *durante* la ejecución del motor, y cuyo resultado alimenta directamente las secciones 3 (Diagnóstico técnico), 4 (Causa raíz), 5 (Plan de solución), 8 (Prevención) y 9 (Datos faltantes / Evidencia) del documento final.
+
+#### 1. Principio — no cerrar en la primera causa plausible
+Encontrar una explicación que encaja con el síntoma no es lo mismo que haber encontrado la causa raíz. Antes de dar por cerrado el diagnóstico, preguntarse explícitamente: *¿qué otra cosa podría producir exactamente el mismo síntoma?* Si existe al menos una hipótesis alternativa razonable con los datos ya disponibles (código, BD, `graphify-out/`, `integraciones.json`), evaluarla antes de fijar la causa raíz — no después, no como nota al margen.
+
+#### 2. Trazabilidad de flujo obligatoria
+Reconstruir la cadena completa hasta el punto donde se origina el problema, no solo hasta donde se manifiesta:
+
+```
+Usuario → Interfaz/origen del dato → Proceso funcional → Backend (función/trigger/servicio) → Base de datos → Registro → Resultado
+```
+
+Identificar explícitamente **en qué eslabón se rompe la cadena**, y distinguir tres cosas que suelen confundirse en un mismo párrafo:
+- **Error visible**: lo que el usuario ve (ej. el mensaje de guardado fallido).
+- **Error técnico**: la condición inmediata que lo dispara (ej. el trigger que lee una reserva residual).
+- **Causa raíz**: por qué esa condición existe (ej. un flujo de despacho que nunca liberó la reserva).
+
+Cuando el flujo pasa por un módulo custom (prefijo propio, ej. `SSDPM`) en vez del flujo estándar de Openbravo, señalarlo explícitamente — es habitualmente el punto donde una sincronización esperada por el core deja de cumplirse.
+
+#### 3. Tabla de hipótesis y descarte
+Cuando exista más de una causa plausible para el mismo síntoma, documentar el descarte con esta estructura (va en la sección 9 del documento, como respaldo de la sección 4):
+
+| Hipótesis | Evidencia | Cómo se validó | Resultado | Estado |
+|---|---|---|---|---|
+| {hipótesis 1} | {fuente/dato} | {consulta o revisión aplicada} | {resultado obtenido} | Confirmada / Descartada |
+| {hipótesis 2} | {fuente/dato} | {consulta o revisión aplicada} | {resultado obtenido} | Confirmada / Descartada |
+
+Si no hay evidencia suficiente para confirmar ninguna con certeza, decirlo explícitamente en la sección 9 (Datos faltantes) en vez de presentar la más plausible como si fuera un hecho confirmado.
+
+#### 4. Cuatro niveles de causa raíz (obligatorios en la sección 4 del documento)
+La sección "Causa raíz" del motor de 9 pasos no queda completa con un solo nivel de explicación. Debe distinguir:
+1. **Síntoma** — qué reporta o percibe el usuario.
+2. **Causa inmediata** — qué dispara el error o comportamiento (trigger, validación, condición puntual).
+3. **Causa raíz** — por qué existe esa condición (qué proceso/flujo la generó).
+4. **Causa estructural** — por qué el sistema permitió que esa condición llegara a producirse sin corregirse sola (ej. una sincronización que el flujo estándar hace pero el módulo custom no replica).
+
+#### 5. Verificación de alcance real — obligatoria cuando la causa raíz es un patrón de datos o de proceso
+Si la causa raíz identificada es una **condición de datos o un gap de un flujo/módulo** (no un error de configuración puntual de un solo registro), **no dar por buena la conclusión de "caso aislado" sin antes medirlo**:
+
+1. Formular una consulta de diagnóstico (vía `pg_query`, Paso 3-B) que cuente o liste cuántos otros registros del cliente comparten exactamente la misma condición estructural que produjo el síntoma (mismo patrón de campos NULL/residuales, mismo módulo de origen, mismo tipo de documento).
+2. Correr esa consulta contra la BD del cliente y registrar el número real obtenido — este resultado es evidencia obligatoria de la sección 9, con el mismo criterio del Paso 5-A (un número obtenido en esta corrida, no una estimación).
+3. Si el número es significativamente mayor a 1, la sección 4 (Causa raíz) y la sección 8 (Prevención) del documento deben reflejar que se trata de un **patrón sistémico**, no de un caso puntual, y la sección 5 (Plan de solución) debe seguir el punto 7 de abajo (fases de corrección).
+4. Si no hay indicios de que la condición pueda repetirse (ej. error de configuración específico de un solo maestro, sin relación con un flujo o módulo compartido), se puede omitir este chequeo — dejar registrado explícitamente el motivo ("no aplica: causa raíz específica de este registro, sin flujo/módulo compartido con otros documentos") en vez de omitirlo en silencio.
+
+#### 6. Workaround vs. solución definitiva — nunca presentar uno como el otro
+Cuando exista una forma de mitigar el síntoma mientras se corrige la causa raíz de fondo, la sección 5 (Plan de solución) debe declarar ambas por separado y explícitamente etiquetadas:
+- **Solución temporal / workaround**: qué se puede hacer ya para reducir o eliminar el impacto inmediato (ej. desactivar la venta sin tocar `isactive`).
+- **Solución definitiva**: qué debe corregirse de fondo — a nivel de datos (Paso 6-B) y/o a nivel de desarrollo (reportar el gap en el módulo/función responsable).
+- **Riesgos del workaround**: qué queda sin resolver o qué puede seguir generando el mismo síntoma mientras no se aplique la solución definitiva.
+
+#### 7. Análisis de impacto y fases de ejecución — obligatorio antes de sugerir cualquier corrección de datos
+Antes de que el Paso 6-B redacte el script correctivo sugerido, evaluar:
+- Qué otros procesos podrían verse afectados por la corrección (POS, ventas, reportes, contabilidad, integraciones registradas del cliente — cruzar con el Paso 3-C).
+- Si el volumen medido en el punto 5 es alto, **la corrección no se sugiere como un único script masivo por defecto**. Separar en fases, siguiendo el mismo patrón usado en el análisis de San Felipe:
+  - **Fase 1 — puntual**: corrección acotada al/los registro(s) del ticket actual, con transacción y respaldo, lista para ejecutar por un técnico.
+  - **Fase 2 — masiva**: corrección del resto de registros con el mismo patrón, explícitamente marcada como *no lista para correr sin revisión* cuando liberar el volumen completo de una vez pueda producir un efecto secundario súbito (ej. disponibilidad de stock, cambios en reportes) — requiere ejecución paginada/por lotes y validación intermedia.
+- Este análisis de impacto y fases va en la sección 5 (Plan de solución) del documento; el script en sí sigue las reglas del Paso 6-B (solo texto, nunca ejecutado automáticamente).
+
+#### 8. Validación de la solución
+La sección 5 (Plan de solución) debe indicar además cómo se comprobaría que la corrección funcionó: qué volver a consultar (ej. repetir la query de alcance del punto 5 y confirmar que el conteo baja a 0 para el/los registro(s) corregidos), y qué caso borde adicional conviene revisar (otro documento con el mismo patrón, otra organización/bodega, otro estado del documento).
+
+---
+
 Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, es común a todos los clientes), usando como entrada:
 - La descripción original del ticket,
 - Si se venía del camino 4.2, también la respuesta de aclaración del cliente,
@@ -436,13 +504,14 @@ Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, 
 
 **Enriquecimiento con las skills complementarias — 3 campos distintos, no se fusionan:**
 - **Tipo de caso** (clasificación nativa del motor, Paso 3 de `openbravo-functional-ticket-analysis`): Operativo / Configuración / Integración / Bug / Infraestructura. Este es el campo principal que determina el manejo general del ticket.
-- **Causa raíz** (vocabulario de `openbravo-triage-tecnico`, dentro de la sección de Diagnóstico/Causa raíz del motor): configuración faltante, estado del documento, restricción de negocio del sistema, dato del cliente erróneo, o bug real (último recurso). Es un campo aparte y más granular que el Tipo de caso — no lo reemplaza ni se combina en el mismo valor.
+- **Causa raíz** (vocabulario de `openbravo-triage-tecnico`, dentro de la sección de Diagnóstico/Causa raíz del motor): configuración faltante, estado del documento, restricción de negocio del sistema, dato del cliente erróneo, o bug real (último recurso). Es un campo aparte y más granular que el Tipo de caso — no lo reemplaza ni se combina en el mismo valor. A partir del Paso 5-B, este campo se documenta en sus cuatro niveles (síntoma / causa inmediata / causa raíz / causa estructural) — no basta con un único vocabulario de causa sin distinguir en qué nivel de la cadena se ubica.
 - **Categoría de audiencia/formato** (taxonomía de `openbravo-soporte-sidesoft`): FUNCIONAL / TÉCNICO / CONFIGURACIÓN / CONTABLE / CAPACITACIÓN. Determina el formato de la respuesta (ver Paso 3 de esa skill), no el diagnóstico en sí.
 - Citar por nombre de archivo cualquier caso de uso de `casos_de_uso_openbravo_erp.md` que aplique.
 
 **Reglas específicas de la sección §7 (respuesta al usuario final) — alineadas con `openbravo-functional-ticket-analysis.mdc`:**
 - §7 **nunca** debe incluir: SQL, sentencias UPDATE, scripts de corrección, referencias a tablas, columnas, código fuente, ni IDs técnicos. Eso va exclusivamente en las secciones 5-6 (uso del consultor/técnico) o en el comentario privado 6.3 de este flujo.
 - §7 debe incluir, cuando aplique: (1) diagnóstico en términos de negocio — qué documento/flujo se usó mal; (2) por qué está mal — naturaleza del movimiento, tipo de documento, impacto en conciliación/contabilidad; (3) qué debieron hacer — el flujo correcto en Openbravo; (4) solución operativa numerada, típicamente en el patrón revertir → recrear correctamente → conciliar/validar.
+- Si el Paso 5-B distinguió workaround y solución definitiva, §7 refleja ambas para el usuario final en lenguaje operativo (qué hacer ya / qué queda pendiente de que un técnico corrija de fondo) — sin perder la regla de no incluir SQL, tablas ni IDs técnicos.
 - Si el caso es operativo (no bug de sistema): la solución principal va completa en §7. El SQL o escalamiento a desarrollo, si existe, va solo en las secciones 5-6 para el consultor — nunca en §7 ni en el comentario de solución 6.3.
 - Si además hay un bug de sistema real: §7 sigue siendo el flujo correcto para el usuario; el detalle técnico del bug y su escalamiento van en 5-6 / comentario privado.
 
@@ -601,6 +670,8 @@ No fue ejecutado automáticamente.
 
 Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GLPI (`glpi_itilfollowups`, `sidesoft_triage_glpi_log`) — nunca sobre la base de datos de producción del ERP del cliente.
 
+Si el Paso 5-B, punto 7, determinó que la corrección tiene una Fase 1 (puntual) y una Fase 2 (masiva), publicar ambas por separado dentro del mismo bloque, cada una con su propio encabezado (`Fase 1 — corrección puntual` / `Fase 2 — corrección masiva, no ejecutar sin revisión`) y el número de registros afectados obtenido en el Paso 5-B, punto 5. Nunca fusionar ambas fases en un único script sin distinguirlas — el volumen alto de la Fase 2 es justamente lo que exige revisión y ejecución por lotes, no ejecución directa.
+
 ---
 
 ## Paso 7 — Registrar en el histórico
@@ -650,3 +721,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca buscar `cliente.json`, `integraciones.json` o `customizaciones/*.md` en el repo de código del cliente — viven en el repo orquestador, bajo `config_dir` (Paso 3). Si `config_dir` es `null`, no intentar leerlos en ningún lado; registrar "sin `config_dir` configurado", no `OMITIDO`.
 - Nunca cerrar el diagnóstico solo con una explicación funcional/de proceso cuando la BD del ERP (Paso 3-B) mostró un valor `null` anómalo en un campo relacional que debería estar poblado — eso es candidato de causa raíz técnica (4-B) y, si aplica corrección de datos, debe acompañarse del script sugerido del Paso 6-B, no reemplazarlo por un rodeo funcional para el usuario final.
 - Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
+- Nunca cerrar una causa raíz de origen técnico o de datos como caso aislado sin haber corrido la consulta de alcance real del Paso 5-B (punto 5) cuando exista un flujo o módulo compartido que pueda repetir la misma condición en otros registros del cliente.
+- Nunca fijar la causa raíz de un ticket habiendo evaluado una sola hipótesis, si con los datos ya leídos en esta corrida existía al menos una hipótesis alternativa razonable — esa evaluación de descarte (Paso 5-B, punto 3) queda registrada en la sección 9, no solo en el razonamiento interno.
+- Nunca presentar un workaround como si fuera la corrección definitiva del problema — ambos van declarados por separado en la sección 5 del análisis (Paso 5-B, punto 6).
+- Nunca sugerir un único script correctivo masivo cuando la consulta de alcance del Paso 5-B muestre un volumen alto de registros afectados — la corrección se separa en Fase 1 (puntual, lista para ejecutar) y Fase 2 (masiva, por lotes, no lista para correr sin revisión), según el Paso 5-B punto 7 y el Paso 6-B.

@@ -1,0 +1,1026 @@
+{
+  "name": "Triage GLPI - Cursor Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b5e94d68-57b6-4a93-b267-5ed898a6d7b8",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        23216,
+        11584
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "glpi_base_url",
+              "value": "https://soporte.sidesoft.com.ec/apirest.php",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "glpi_user_token",
+              "value": "PO7cwAZKgoDTdI1zZes8qJ59Slx1Z8uLpidXgyIf",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "glpi_app_token",
+              "value": "V6eycTyr62sPBpE5p4kf8lDJ5bBCJXpZvgyCXSFI",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "cursor_automation_webhook_url",
+              "value": "https://api2.cursor.sh/automations/webhook/8407040a-8b61-11f1-b532-320a589b8025",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "cursor_automation_webhook_secret",
+              "value": "crsr_ae5d8163375ff7eee3535d7b852ef19ad3097ffdb2b5bdbe33de4276a6dfc6bb",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "abacus_api_key",
+              "value": "s2_763679e858a04624a9da1f3b0cc75684",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "abacus_model",
+              "value": "gpt-4o",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1cdfb295-2780-4c89-aec2-eb5cd8d7ddf6",
+      "name": "Configuracion",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        23392,
+        12080
+      ],
+      "notes": "UNICO lugar donde se editan tokens y URLs. Todo lo demas en el flujo referencia estos campos, nunca los repitas en otro nodo. Agregar abacus_api_key real antes de usar."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Configuracion').item.json.glpi_base_url}}/initSession",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=user_token {{$('Configuracion').item.json.glpi_user_token}}"
+            },
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').item.json.glpi_app_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ef2814e0-c731-440f-af4a-e55d0a3f4fa0",
+      "name": "GLPI - Iniciar Sesion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        23584,
+        12080
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$('Configuracion').item.json.glpi_base_url}}/search/Ticket",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "criteria[0][field]",
+              "value": "12"
+            },
+            {
+              "name": "criteria[0][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[0][value]",
+              "value": "1"
+            },
+            {
+              "name": "criteria[1][link]",
+              "value": "AND"
+            },
+            {
+              "name": "criteria[1][criteria][0][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][0][searchtype]",
+              "value": "notequals"
+            },
+            {
+              "name": "criteria[1][criteria][0][value]",
+              "value": "111"
+            },
+            {
+              "name": "criteria[1][criteria][1][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][1][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][1][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][1][value]",
+              "value": "168"
+            },
+            {
+              "name": "criteria[1][criteria][2][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][2][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][2][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][2][value]",
+              "value": "173"
+            },
+            {
+              "name": "criteria[1][criteria][3][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][3][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][3][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][3][value]",
+              "value": "172"
+            },
+            {
+              "name": "criteria[1][criteria][4][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][4][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][4][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][4][value]",
+              "value": "171"
+            },
+            {
+              "name": "criteria[1][criteria][5][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][5][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][5][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][5][value]",
+              "value": "174"
+            },
+            {
+              "name": "criteria[1][criteria][6][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][6][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][6][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][6][value]",
+              "value": "170"
+            },
+            {
+              "name": "criteria[1][criteria][7][link]",
+              "value": "AND NOT"
+            },
+            {
+              "name": "criteria[1][criteria][7][field]",
+              "value": "4"
+            },
+            {
+              "name": "criteria[1][criteria][7][searchtype]",
+              "value": "equals"
+            },
+            {
+              "name": "criteria[1][criteria][7][value]",
+              "value": "169"
+            },
+            {
+              "name": "forcedisplay[0]",
+              "value": "2"
+            },
+            {
+              "name": "sort",
+              "value": "15"
+            },
+            {
+              "name": "order",
+              "value": "ASC"
+            },
+            {
+              "name": "range",
+              "value": "0-0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').item.json.glpi_app_token}}"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{$('GLPI - Iniciar Sesion').item.json.session_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f4d7ee2c-b820-48ec-a301-252a4315378c",
+      "name": "GLPI - Buscar Tickets Nuevos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        23760,
+        12096
+      ],
+      "notes": "Estado=Nuevo (field 12=1) AND Solicitante NOT IN (Magic, Carnidem Sistemas, pwoperaciones, jflores, ldiaz, proveedores, pwcontabilidad, Gasomanta via field 4). range=0-0=1 resultado, ordenado por fecha de apertura ascendente (field 15).\n\nIMPORTANTE - 2 cosas que debes verificar/completar antes de activar:\n1) Los REEMPLAZAR_ID_* deben cambiarse por el ID numerico real de cada usuario en GLPI (no el username) - lo ves en Configuracion > Usuarios al abrir el usuario, en la URL user.form.php?id=XXX.\n2) Los numeros de field (12=Estado, 45=Fuente de solicitud, 4=Solicitante) son los estandar de GLPI pero pueden variar segun tu version/plugins. Forma mas segura de confirmarlos: aplica este mismo filtro manualmente en la lista de tickets de GLPI, abre las herramientas de desarrollador del navegador (Network), y revisa la URL que GLPI genera hacia /search/Ticket - ahi veras los field IDs reales de tu instancia."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Toma el (unico) ticket Nuevo devuelto por la busqueda (range=0-0 = limit 1).\n// Si no hay ningun ticket en estado Nuevo, devuelve 0 items y el flujo no procesa nada en esta corrida.\nconst data = $json.data || [];\nreturn data.map(row => ({ json: { ticket_id: row['2'] } }));"
+      },
+      "id": "0c6c9f50-dad2-487f-9cce-e08b4dc878e2",
+      "name": "Ticket a Procesar (Nuevo)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        24000,
+        12096
+      ],
+      "notes": "Reemplaza la whitelist fija. Toma ticket_id desde el resultado de 'GLPI - Buscar Tickets Nuevos'."
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "825b7000-3210-402d-b78c-8a5e36924711",
+      "name": "Loop Tickets",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        24160,
+        12096
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$('Configuracion').item.json.glpi_base_url}}/Ticket/{{$json[\"ticket_id\"]}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').item.json.glpi_app_token}}"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{$('GLPI - Iniciar Sesion').item.json.session_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "851b778d-d2cb-48cc-b0cc-547081d00c62",
+      "name": "GLPI - Detalle Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        24336,
+        12000
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$('Configuracion').item.json.glpi_base_url}}/Ticket/{{$json[\"ticket_id\"]}}/Document_Item",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').item.json.glpi_app_token}}"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{$('GLPI - Iniciar Sesion').item.json.session_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "49b87058-2760-49c3-9c5f-4142864030af",
+      "name": "GLPI - Documentos Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        24336,
+        12192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// El content de GLPI viene con las etiquetas HTML escapadas como entidades\n// (&lt;img src=&quot;...&quot;&gt; en vez de <img src=\"...\">). Hay que decodificar\n// ANTES de buscar <img>, si no el regex nunca encuentra nada.\nfunction decodeEntities(str) {\n  return str\n    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;|&apos;/g, \"'\")\n    .replace(/&nbsp;/g, ' ');\n}\n\nconst ticket = $('GLPI - Detalle Ticket').first().json;\nlet html = ticket.content || '';\nhtml = decodeEntities(html);\nhtml = decodeEntities(html); // GLPI a veces escapa doble\n\nconst items = [];\n\n// Solo el src de tags <img>, no cualquier link a documento que tambien tenga docid=\nconst imgTags = [...html.matchAll(/<img[^>]+src=[\"']([^\"']+)[\"']/gi)].map(m => m[1]);\nconst docidSet = new Set();\nfor (const src of imgTags) {\n  const m = src.match(/docid=(\\d+)/);\n  if (m) docidSet.add(m[1]);\n}\nfor (const id of docidSet) {\n  items.push({ ticket_id: ticket.id, tipo: 'docid', docid: id, tiene_imagen: true });\n}\n\nconst inlineMatches = [...html.matchAll(/<img[^>]+src=[\"']data:(image\\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+\\/=\\s]+)[\"']/gi)];\ninlineMatches.forEach((m) => {\n  items.push({\n    ticket_id: ticket.id,\n    tipo: 'inline',\n    docid: null,\n    imagen_base64: m[2].replace(/\\s+/g, ''),\n    imagen_mime_declarado: m[1],\n    tiene_imagen: true,\n  });\n});\n\nif (items.length === 0) {\n  return [{ json: { ticket_id: ticket.id, docid: null, tipo: null, tiene_imagen: false }, pairedItem: { item: 0 } }];\n}\n\nreturn items.map(it => ({ json: it, pairedItem: { item: 0 } }));"
+      },
+      "id": "c2ae0dec-4a6f-4736-a2f6-63a799b5f9da",
+      "name": "Extraer Imagenes (docids)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        24592,
+        12192
+      ],
+      "notes": "Decodifica entidades HTML antes de buscar <img>. Sin esto, el content escapado de GLPI nunca matchea."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-img-1",
+              "leftValue": "={{$json.tiene_imagen}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a9892a67-b84f-45dc-9ff9-3244a20fb40d",
+      "name": "Tiene Imagen",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        24816,
+        12192
+      ],
+      "notes": "Revisar en el editor que la condicion quede como 'tiene_imagen is true' - el schema exacto puede variar segun tu version de n8n."
+    },
+    {
+      "parameters": {
+        "url": "={{$('Configuracion').first().json.glpi_base_url}}/Document/{{$json.docid}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').first().json.glpi_app_token}}"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{$('GLPI - Iniciar Sesion').first().json.session_token}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/octet-stream"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "db8a6b1e-3e04-4558-a654-22a108e36a78",
+      "name": "GLPI - Descargar Imagen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        25040,
+        12096
+      ],
+      "notes": "Descarga el binario real de la imagen usando la sesion ya abierta. Revisar que 'Response Format' quede como Binary/File en el nodo."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://routellm.abacus.ai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Configuracion').first().json.abacus_api_key}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.abacus_request_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "abacus_raw"
+            }
+          }
+        }
+      },
+      "id": "c8bde0f1-940b-475d-a2b4-50cb40621ad3",
+      "name": "Abacus - Analizar Imagen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        25600,
+        12000
+      ],
+      "notes": "El body ya viene armado y serializado desde 'Preparar Imagen Base64' - aqui solo se referencia, no se construye, para evitar que n8n corrompa el base64 largo dentro de una expresion compleja."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesa TODOS los items de entrada (una respuesta de Abacus por item).\nreturn $input.all().map(item => {\n  let contenido = '';\n  try {\n    const resp = JSON.parse(item.json.abacus_raw);\n    contenido = (resp && resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content) || '';\n  } catch (e) {\n    contenido = '[No se pudo interpretar la respuesta de Abacus: ' + String(item.json.abacus_raw).slice(0, 300) + ']';\n  }\n  return {\n    json: {\n      ticket_id: item.json.ticket_id,\n      docid: item.json.docid,\n      tiene_imagen: true,\n      analisis_imagen: contenido,\n    }\n  };\n});"
+      },
+      "id": "c2072be0-1189-4fc6-bd20-32f50dcea0ff",
+      "name": "Formatear Analisis Imagen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25824,
+        12000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    ticket_id: item.json.ticket_id,\n    docid: null,\n    tiene_imagen: false,\n    analisis_imagen: '',\n  }\n}));"
+      },
+      "id": "9754f6c9-9759-443d-9273-e904b7a08e22",
+      "name": "Sin Imagen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25040,
+        12288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Todos estos items pertenecen al mismo ticket (Loop Tickets procesa de a uno).\n// pairedItem: 0 explicito para no perder el linaje hacia el ticket original.\nconst items = $input.all();\nconst partes = items\n  .filter(i => i.json.tiene_imagen && i.json.analisis_imagen)\n  .map((i, idx) => `Imagen ${idx + 1}:\\n${i.json.analisis_imagen}`);\n\nreturn [{\n  json: { analisis_imagenes: partes.length ? partes.join('\\n\\n') : '' },\n  pairedItem: { item: 0 },\n}];"
+      },
+      "id": "4aca0874-04eb-4c0e-bd54-ea41224e6d6f",
+      "name": "Agregar Analisis de Imagenes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25936,
+        12192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Toma el HTML del ticket + el analisis de imagenes ya generado por Abacus.\nconst ticket = $('GLPI - Detalle Ticket').first().json;\nlet html = ticket.content || '';\n\nfunction decodeEntities(str) {\n  return str\n    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;|&apos;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&aacute;/gi, 'a').replace(/&eacute;/gi, 'e').replace(/&iacute;/gi, 'i').replace(/&oacute;/gi, 'o').replace(/&uacute;/gi, 'u')\n    .replace(/&ntilde;/gi, 'n');\n}\n\nhtml = decodeEntities(html);\nhtml = decodeEntities(html);\n\n// Las imagenes ya fueron analizadas por Abacus; solo dejamos una referencia en el texto.\nhtml = html.replace(/<img[^>]*>/gi, '[Imagen - ver analisis extraido abajo]');\n\nhtml = html.replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')\n           .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '');\n\nhtml = html.replace(/<br\\s*\\/?\\s*>/gi, '\\n')\n           .replace(/<\\/p>/gi, '\\n\\n')\n           .replace(/<\\/li>/gi, '\\n')\n           .replace(/<\\/div>/gi, '\\n');\n\nlet texto = html.replace(/<[^>]+>/g, '');\ntexto = texto.replace(/[ \\t]{2,}/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();\n\nconst documentos = $('GLPI - Documentos Ticket').all();\nconst nombresAdjuntos = documentos\n  .map(d => d.json.name || d.json.filename)\n  .filter(Boolean);\n\nconst analisisImagenes = $json.analisis_imagenes || '';\nconst textoFinal = analisisImagenes\n  ? `${texto}\\n\\nDetalles Adicionales:\\n${analisisImagenes}`\n  : texto;\n\nreturn [{\n  json: {\n    ticket_id: ticket.id,\n    texto_limpio: textoFinal,\n    adjuntos: nombresAdjuntos.length ? nombresAdjuntos.join(', ') : 'sin adjuntos',\n  }\n}];"
+      },
+      "id": "e11430bf-6940-4728-b451-eed61b97d3b1",
+      "name": "Limpiar Ticket (HTML)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        26160,
+        12192
+      ],
+      "notes": "Ahora inyecta el analisis de imagenes (de Abacus) dentro de texto_limpio antes de mandarlo a Cursor."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Configuracion').item.json.cursor_automation_webhook_url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer crsr_29052b00819ea78250c8b978d30696ad42befa233435c64f59df6ef2fc99ff16"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  ticket_id: $json.ticket_id,\n  texto_limpio: $json.texto_limpio,\n  adjuntos: $json.adjuntos\n}) }}",
+        "options": {}
+      },
+      "id": "8cf63351-e9ab-4f03-80a6-6e7e08b5a487",
+      "name": "Cursor - Disparar Automation (Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        26384,
+        12096
+      ],
+      "notes": "Dispara el Automation ya configurado en Cursor (skill triage-glpi-auto)."
+    },
+    {
+      "parameters": {
+        "url": "={{$('Configuracion').item.json.glpi_base_url}}/killSession",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "={{$('Configuracion').item.json.glpi_app_token}}"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{$('GLPI - Iniciar Sesion').item.json.session_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ea5d0174-114b-43a2-888e-7c04f1c0e651",
+      "name": "GLPI - Cerrar Sesion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        24336,
+        11792
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// IMPORTANTE: cuando n8n tiene el binary data en modo 'filesystem',\n// item.binary.data.data NO trae el base64 real - trae un marcador interno\n// (ej. 'filesystem-v2'). Hay que resolver el buffer real con el helper oficial\n// this.helpers.getBinaryDataBuffer(itemIndex, propertyName), que funciona\n// sin importar el modo de almacenamiento configurado.\n\nfunction detectMime(b) {\n  if (b.length >= 8 && b[0]===0x89 && b[1]===0x50 && b[2]===0x4E && b[3]===0x47) return 'image/png';\n  if (b.length >= 3 && b[0]===0xFF && b[1]===0xD8 && b[2]===0xFF) return 'image/jpeg';\n  if (b.length >= 4 && b.slice(0,3).toString('ascii') === 'GIF') return 'image/gif';\n  if (b.length >= 12 && b.slice(0,4).toString('ascii') === 'RIFF' && b.slice(8,12).toString('ascii') === 'WEBP') return 'image/webp';\n  if (b.length >= 2 && b[0]===0x42 && b[1]===0x4D) return 'image/bmp';\n  return null;\n}\n\nconst items = $input.all();\nconst abacusModel = $('Configuracion').first().json.abacus_model;\nconst promptTexto = \"Extrae los datos de este formulario o pantalla como pares campo: valor, uno por linea, en texto plano. No uses JSON ni markdown ni explicaciones adicionales. Incluye todos los campos visibles (Organizacion, Tipo de documento, N. de documento, Factura, Tarifa, Fecha de pago, Totales, Moneda, etc). Si un campo esta vacio, en cero o resaltado en amarillo, indicalo explicitamente.\";\n\nconst resultados = [];\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  if (!item.binary || !item.binary.data) {\n    throw new Error('No se encontro binario \"data\" en el item - revisa GLPI - Descargar Imagen');\n  }\n\n  const buf = await this.helpers.getBinaryDataBuffer(i, 'data');\n  const base64Real = buf.toString('base64');\n  const mimeDetectado = detectMime(buf);\n  const mimeFinal = mimeDetectado || item.binary.data.mimeType || null;\n  const esGif = mimeFinal === 'image/gif';\n  const soportado = !!mimeFinal && !esGif;\n\n  const body = soportado ? {\n    model: abacusModel,\n    messages: [{\n      role: 'user',\n      content: [\n        { type: 'text', text: promptTexto },\n        { type: 'image_url', image_url: { url: 'data:' + mimeFinal + ';base64,' + base64Real } }\n      ]\n    }]\n  } : null;\n\n  resultados.push({\n    json: {\n      ...item.json,\n      imagen_mime: mimeFinal,\n      imagen_formato_soportado: soportado,\n      abacus_request_body: soportado ? JSON.stringify(body) : null,\n    },\n    binary: item.binary,\n  });\n}\n\nreturn resultados;"
+      },
+      "id": "27d7187c-06d4-4dca-bf12-b34a30bc6351",
+      "name": "Preparar Imagen Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25152,
+        12096
+      ],
+      "notes": "Usa this.helpers.getBinaryDataBuffer para resolver el binario real, sin importar si n8n esta en modo memory o filesystem para el almacenamiento de binarios."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-fmt-1",
+              "leftValue": "={{$json.imagen_formato_soportado}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ddbd9b04-4069-49e1-9769-b2371fed7cf5",
+      "name": "Formato Soportado",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        25376,
+        12096
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Se descarta cada imagen de formato no soportado sin aportar texto,\n// pero SIN perder las demas (procesa todos los items de entrada).\nreturn $input.all().map(item => ({\n  json: {\n    ticket_id: item.json.ticket_id,\n    docid: item.json.docid,\n    tiene_imagen: false,\n    analisis_imagen: '',\n  }\n}));"
+      },
+      "id": "e18c692f-719b-426e-8b8d-0b2d98d7737a",
+      "name": "Formato No Soportado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25600,
+        12288
+      ],
+      "notes": "tiene_imagen=false y analisis_imagen vacio => 'Agregar Analisis de Imagenes' la filtra y no aparece en el texto final. Las demas imagenes del ticket siguen su propio camino sin verse afectadas."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-inline-1",
+              "leftValue": "={{$json.tipo}}",
+              "rightValue": "inline",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "54c83c19-7622-4aae-8c44-89002c4a0f1e",
+      "name": "Es Inline",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        24816,
+        12000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesa TODOS los items de entrada. La imagen ya vino en base64 dentro del HTML.\n// Regla de negocio: se soporta CUALQUIER tipo de imagen, EXCEPTO gif.\nfunction detectMime(b) {\n  if (b.length >= 8 && b[0]===0x89 && b[1]===0x50 && b[2]===0x4E && b[3]===0x47) return 'image/png';\n  if (b.length >= 3 && b[0]===0xFF && b[1]===0xD8 && b[2]===0xFF) return 'image/jpeg';\n  if (b.length >= 4 && b.slice(0,3).toString('ascii') === 'GIF') return 'image/gif';\n  if (b.length >= 12 && b.slice(0,4).toString('ascii') === 'RIFF' && b.slice(8,12).toString('ascii') === 'WEBP') return 'image/webp';\n  if (b.length >= 2 && b[0]===0x42 && b[1]===0x4D) return 'image/bmp';\n  return null;\n}\n\nfunction limpiarBase64(s) {\n  // por si viene con prefijo 'data:...;base64,' pegado por error\n  const idx = s.indexOf('base64,');\n  return idx >= 0 ? s.slice(idx + 7) : s;\n}\n\nreturn $input.all().map(item => {\n  const base64Original = item.json.imagen_base64;\n  if (!base64Original) {\n    throw new Error('Imagen inline sin base64 - revisar Extraer Imagenes (docids)');\n  }\n  const base64Limpio = limpiarBase64(base64Original);\n  const buf = Buffer.from(base64Limpio, 'base64');\n  const mimeDetectado = detectMime(buf);\n  const mimeFinal = mimeDetectado || item.json.imagen_mime_declarado || null;\n  const esGif = mimeFinal === 'image/gif';\n\n  const abacusModel = $('Configuracion').first().json.abacus_model;\n  const promptTexto = \"Extrae los datos de este formulario o pantalla como pares campo: valor, uno por linea, en texto plano. No uses JSON ni markdown ni explicaciones adicionales. Incluye todos los campos visibles (Organizacion, Tipo de documento, N. de documento, Factura, Tarifa, Fecha de pago, Totales, Moneda, etc). Si un campo esta vacio, en cero o resaltado en amarillo, indicalo explicitamente.\";\n  const body = {\n    model: abacusModel,\n    messages: [\n      {\n        role: 'user',\n        content: [\n          { type: 'text', text: promptTexto },\n          { type: 'image_url', image_url: { url: 'data:' + mimeFinal + ';base64,' + base64Limpio } }\n        ]\n      }\n    ]\n  };\n  return {\n    json: {\n      ...item.json,\n      imagen_mime: mimeFinal,\n      imagen_formato_soportado: !!mimeFinal && !esGif,\n      abacus_request_body: (!!mimeFinal && !esGif) ? JSON.stringify(body) : null,\n    },\n  };\n});"
+      },
+      "id": "7579da3e-4f15-4b51-a30c-fd9d035667a7",
+      "name": "Preparar Imagen Base64 (Inline)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        25040,
+        11904
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 9-17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        23088,
+        12080
+      ],
+      "id": "47729b4c-c166-403b-9ca8-dd225584cc68",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        []
+      ]
+    },
+    "Configuracion": {
+      "main": [
+        [
+          {
+            "node": "GLPI - Iniciar Sesion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GLPI - Iniciar Sesion": {
+      "main": [
+        [
+          {
+            "node": "GLPI - Buscar Tickets Nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GLPI - Buscar Tickets Nuevos": {
+      "main": [
+        [
+          {
+            "node": "Ticket a Procesar (Nuevo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ticket a Procesar (Nuevo)": {
+      "main": [
+        [
+          {
+            "node": "Loop Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Tickets": {
+      "main": [
+        [
+          {
+            "node": "GLPI - Cerrar Sesion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GLPI - Detalle Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GLPI - Detalle Ticket": {
+      "main": [
+        [
+          {
+            "node": "GLPI - Documentos Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GLPI - Documentos Ticket": {
+      "main": [
+        [
+          {
+            "node": "Extraer Imagenes (docids)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Imagenes (docids)": {
+      "main": [
+        [
+          {
+            "node": "Tiene Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tiene Imagen": {
+      "main": [
+        [
+          {
+            "node": "Es Inline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GLPI - Descargar Imagen": {
+      "main": [
+        [
+          {
+            "node": "Preparar Imagen Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Abacus - Analizar Imagen": {
+      "main": [
+        [
+          {
+            "node": "Formatear Analisis Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Analisis Imagen": {
+      "main": [
+        [
+          {
+            "node": "Agregar Analisis de Imagenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin Imagen": {
+      "main": [
+        [
+          {
+            "node": "Agregar Analisis de Imagenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar Analisis de Imagenes": {
+      "main": [
+        [
+          {
+            "node": "Limpiar Ticket (HTML)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar Ticket (HTML)": {
+      "main": [
+        [
+          {
+            "node": "Cursor - Disparar Automation (Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cursor - Disparar Automation (Webhook)": {
+      "main": [
+        [
+          {
+            "node": "Loop Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Imagen Base64": {
+      "main": [
+        [
+          {
+            "node": "Formato Soportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato Soportado": {
+      "main": [
+        [
+          {
+            "node": "Abacus - Analizar Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formato No Soportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato No Soportado": {
+      "main": [
+        [
+          {
+            "node": "Agregar Analisis de Imagenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es Inline": {
+      "main": [
+        [
+          {
+            "node": "Preparar Imagen Base64 (Inline)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GLPI - Descargar Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Imagen Base64 (Inline)": {
+      "main": [
+        [
+          {
+            "node": "Formato Soportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ee365977-da9d-4fd8-942a-fe0b7ec25a6a",
+  "meta": {
+    "instanceId": "e92fa3d4418b801b44279868bd8c598710ddc19a0c03b7af42e8819317ec8acc"
+  },
+  "id": "bxP5yA6lTntxc6kd",
+  "tags": []
+}
