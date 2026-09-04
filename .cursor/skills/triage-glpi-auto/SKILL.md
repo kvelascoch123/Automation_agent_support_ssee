@@ -528,14 +528,19 @@ Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.gl
 ### 6.1 — Comentario privado: SLA/criticidad + score de acertividad (fusionado)
 Un solo `INSERT` que combina ambos contenidos — nivel SLA, criticidad, área funcional, tiempo estimado, **y** el score de acertividad de la §7 con su justificación, todo en el mismo comentario.
 
-Evaluar el score exclusivamente sobre la sección §7 del análisis del Paso 5, con estos rangos:
+Evaluar el score exclusivamente sobre la sección §7 del análisis del Paso 5. El eje del score **no es qué tan bien redactada o evidenciada está la respuesta** — es **qué tipo de intervención se necesita para que el caso puntual reportado quede efectivamente cerrado**. La pregunta que decide el rango: *¿quién cierra el caso, y con qué medio?*
 
 | Rango | Criterio |
 |---|---|
-| 90–100 | Veredicto con evidencia directa de módulo/código confirmado, sin datos faltantes, procedimiento accionable completo |
-| 70–89 | Buena evidencia pero con 1 supuesto razonable no confirmado, o falta 1 dato menor |
-| 40–69 | Diagnóstico plausible pero con confianza Media/Baja declarada, o basado solo en comportamiento core sin confirmar personalización del proyecto |
-| 0–39 | Datos insuficientes pese a pasar el filtro de contexto, múltiples hipótesis sin evidencia, o Datos faltantes con elementos críticos pendientes |
+| 90–100 | **Autoservicio**: el usuario o consultor resuelve el caso completo con configuración o pasos ejecutables directamente en el sistema — no requiere que un técnico corrija datos, ni desarrollo pendiente, ni siquiera para prevenir que se repita. |
+| 80–89 | **Intervención manual/funcional o técnica puntual que SÍ cierra el caso actual**: un consultor o técnico corrige datos, ancla/anula registros, o determina el valor correcto mediante un método alterno (ej. cálculo manual, otra fuente de verdad) — el caso puntual queda resuelto hoy, aunque quede pendiente un desarrollo para que no se repita en el futuro. Dentro de este rango, un caso ya resuelto sin cabos sueltos va hacia 85-89; uno resuelto pero con más de un punto todavía por confirmar o coordinar va hacia 80-84. |
+| 71–80 | **Demanda no cubierta por el sistema, ni con esfuerzo manual**: lo que el usuario pidió no se puede cumplir hoy de ninguna forma — cualquier workaround disponible solo evita o mitiga el síntoma, no satisface lo solicitado. Depende enteramente de que el proveedor entregue el desarrollo. |
+| 40–70 | Diagnóstico plausible pero con confianza Media/Baja declarada, o basado solo en comportamiento core sin confirmar personalización del proyecto — evidencia insuficiente para clasificar con certeza en cualquiera de los rangos anteriores. |
+| 0–39 | Datos insuficientes pese a pasar el filtro de contexto, múltiples hipótesis sin evidencia, o Datos faltantes con elementos críticos pendientes. |
+
+**Excepción — casos de capacitación no formalizados**: si §7 concluye que la solución real es que el usuario reciba capacitación o coordinación (y el ticket no disparó el Caso Capacitación del Paso 4.0 por no contener las palabras clave), aplicar como máximo **49** — depende de gestión coordinada con el cliente, no de una corrección de sistema.
+
+**Nota de calibración**: la evidencia (Paso 5-A) sigue siendo obligatoria y sigue registrándose en la sección 9, pero ya no determina el rango por sí sola — determina si la clasificación del tipo de intervención (autoservicio / manual-técnica-puntual / desarrollo pendiente) es confiable. Un diagnóstico con evidencia débil no debe declararse "autoservicio" (90-100) ni "cierra el caso hoy" (80-89) solo porque suena plausible: si no hay evidencia firme de en cuál de los tres tipos cae, el score baja al rango 40-70 en vez de forzarlo hacia arriba.
 
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
