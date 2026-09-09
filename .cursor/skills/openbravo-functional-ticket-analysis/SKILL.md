@@ -3,8 +3,8 @@ name: openbravo-functional-ticket-analysis
 description: >-
   Analiza tickets e incidencias funcionales de Openbravo ERP, y consultas de viabilidad
   ("¿el sistema permite…?", "¿existe la posibilidad de…?"): normaliza el texto libre,
-  clasifica el caso, consulta markdowns de módulos vía skill openbravo-modules
-  (docs/knowledge y docs_customization/knowledge), valida core + personalizaciones,
+  clasifica el caso, explora el repo de código del cliente (graphify-out/ y código fuente) para
+  identificar módulos y reglas de personalización, valida core + personalizaciones,
   desglosa en sub-capacidades y entrega veredicto SÍ/NO/PARCIAL con workaround operativo.
   Encadena con openbravo-operational-walkthrough para GUIA OPERATIVA. No usar para
   desarrollo puro, creación de módulos o BDC.
@@ -134,10 +134,9 @@ Indica **confianza** y **requiere desarrollo** (Sí/No/Por confirmar).
    - **Capa operativa / síntoma:** por qué falla en pantalla hoy (ej. depósito y reintegro con el mismo importe en signos opuestos → conciliación duplica el valor).
    - No reducir la §7 solo a la capa operativa si la evidencia muestra también error de proceso documental.
 3. Ubicar **punto de fallo**: ventana, botón, proceso, validación, matching, posting.
-4. **Consulta obligatoria de módulos (skill `openbravo-modules`):** identificar 1–4 módulos candidatos y leer sus markdowns en **`docs_customization/knowledge/`** (prioridad Unnoparts) y **`docs/knowledge/`** antes de concluir. Ver § *Encadenamiento con openbravo-modules* más abajo.
-5. Si aplica, **revisar código del repo** (Java, SQL/XML functions, AD) solo para confirmar o ampliar lo documentado en los markdowns.
-6. Diferenciar: error del **usuario/proceso** vs **defecto del sistema** vs **dato maestro**.
-7. Antes de proponer solución: **¿el usuario usó el documento/proceso correcto según la documentación del módulo?**
+4. **Exploración obligatoria del repo del cliente:** identificar 1–4 módulos candidatos (por dominio/keywords, ver mapa 5B) y explorar directamente el repo de código de ese cliente para esos módulos — vía `graphify-out/` y código fuente (Java, SQL/XML functions, AD_*), siguiendo el procedimiento del Paso 5A — antes de concluir.
+5. Diferenciar: error del **usuario/proceso** vs **defecto del sistema** vs **dato maestro**.
+6. Antes de proponer solución: **¿el usuario usó el documento/proceso correcto según lo que confirma el código?**
 
 ---
 
@@ -147,10 +146,7 @@ Indica **confianza** y **requiere desarrollo** (Sí/No/Por confirmar).
 
 1. **¿Qué capacidad exacta se pregunta?** (crear, aplicar, automatizar, parcial, por cuota/línea/documento)
 2. **¿Qué dice el core Openbravo?** (módulos estándar: `org.openbravo.*`, APRM, etc.)
-3. **¿Qué dice esta instalación (Unnoparts)?** Invocar skill **`openbravo-modules`** y leer markdowns en:
-   - `{M}/docs_customization/knowledge/` (**prioridad**)
-   - `{M}/docs/knowledge/` (complemento / inventario)
-   Archivos clave: `01-user-chat-guide.md`, `30-functional-processes.md`, `35-messages-and-errors.md`, `50-technical-db-triggers-functions.md`. Solo si falta evidencia en markdowns, buscar triggers/funciones en código.
+3. **¿Qué dice esta instalación (Unnoparts)?** Explorar directamente el repo de código de ese cliente para el módulo candidato — `graphify-out/` y código fuente (Java, funciones PL/SQL, `AD_*.xml`) — siguiendo el procedimiento del Paso 5A. Buscar ahí triggers/reglas propias del proyecto (`SSPCH_*`, `SSOREL_*`, extensiones `em_*`).
 4. **¿Hay reglas de negocio que restrinjan el flujo?** (cobranza secuencial, FE obligatoria, estados de documento, etc.)
 5. **Si NO es posible de forma directa:** ¿existe **workaround operativo** documentado o inferible en el proyecto?
 6. **¿Hay flujo alternativo específico del proyecto?** (pre-cancelación, acuerdo de pago, cruce de anticipo, etc.)
@@ -165,7 +161,7 @@ Indica **confianza** y **requiere desarrollo** (Sí/No/Por confirmar).
 | Proyecto | Triggers `SSPCH_*`, `SSOREL_*`, extensiones `em_*` | Sin revisar secuencia de cuotas en cobranza |
 | Negocio | Workaround NC + nueva factura + cruce | Inventariar módulos sin dar procedimiento |
 
-Prioridad de evidencia: **markdown `docs_customization/knowledge/`** > **markdown `docs/knowledge/`** > trigger/código del proyecto > comportamiento core genérico.
+Prioridad de evidencia: **`graphify-out/` + código del proyecto** (repo del cliente) > comportamiento core genérico.
 
 ### Matriz de capacidades (obligatoria en consultas de viabilidad)
 
@@ -305,7 +301,7 @@ Mismo esqueleto de 9 secciones, con contenido adaptado:
 ### A. Procedimiento recomendado (workaround si no es directo) — pasos numerados
 ### B. Validaciones previas (checklist: tipos doc, config, estados, módulos)
 ### C. Riesgos / qué no hacer
-### D. Evidencia técnica breve (2–5 bullets: módulo + markdown consultado, proceso, trigger, mensaje — para L2)
+### D. Evidencia técnica breve (2–5 bullets: módulo + archivo/función confirmado en repo, proceso, trigger, mensaje — para L2)
 
 ## 6) Escalamiento (si aplica)
 - Solo si requiere desarrollo o parametrización inexistente
@@ -341,7 +337,7 @@ En el análisis del caso se identifica que [qué pasó y qué impide cerrar la o
 **Qué debieron hacer (proceso correcto en Openbravo)**
 - [...]
 
-**Solución a aplicar ahora**
+**Solución a aplicar o verificar**
 Paso 1 — [...]
 Paso 2 — [...]
 Paso 3 — [...]
@@ -357,6 +353,7 @@ Paso 3 — [...]
 | Explicar **entrada vs salida de banco** cuando aplique | Arrancar solo por depósito/reintegro o mensaje técnico |
 | Unir causa de negocio + síntoma si ambas están evidenciadas | §7 solo con parche de datos sin decir por qué se registró mal |
 | Pasos numerados accionables (reactivar, corregir, conciliar) | SQL, IDs de trigger, nombres de columnas |
+| **Nombrar la ventana exacta (ruta de menú es_ES, confirmada en 5C)** cuando la solución sea una acción de UI | Decir «consulte a su consultor» u omitir la ruta cuando el nombre ya se confirmó en el código/AD_MENU |
 | Cerrar con **Importante** breve | Escalar a soporte como única salida |
 
 **Ejemplo de tono (conciliación — devolución de anticipo mal registrada):**
@@ -374,7 +371,7 @@ Se intentó devolver anticipo mediante cobros con importe negativo («Cantidad d
 **Qué debieron hacer (proceso correcto en Openbravo)**
 - Devolver el anticipo con el flujo de **salida de banco** / pago o reintegro vinculado al concepto contable de **anticipos de clientes**, alineado al movimiento que refleja el extracto (débito bancario).
 
-**Solución a aplicar ahora**
+**Solución a aplicar o verificar**
 Paso 1 — Con tesorería, identificar los cobros afectados (referencia 129647175) y no forzar la conciliación parcial.
 Paso 2 — Corregir o rehacer el movimiento para que represente la salida de banco (reintegro = importe del débito del extracto; depósito en cero) o revertir y registrar con el flujo correcto de devolución de anticipo.
 Paso 3 — Volver a conciliar con la línea del extracto y validar que el importe neto coincida con el banco.
@@ -414,6 +411,7 @@ Respecto a su consulta sobre [operación en una frase]:
 | Explicar en párrafos («Por qué») | Matriz Sí/No/Parcial por ítem (eso va en §3–5) |
 | Pasos numerados 1, 2, 3… accionables | Pasos genéricos («validar en sistema») |
 | Mencionar orden de cuotas / secuencia si aplica | Suponer que el usuario conoce APRM o triggers |
+| **Nombrar la ventana/proceso exacto (es_ES, confirmado en 5C)** cuando el procedimiento recomendado sea una acción en pantalla | Dar pasos genéricos («ingrese al sistema y ajuste») cuando el nombre ya se confirmó en el código |
 | Cerrar con **Importante** breve | Inventario de módulos o referencias técnicas |
 
 **Ejemplo de tono (NC parcial + plan por cuota):**
@@ -451,6 +449,7 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | §7 solo con «usaron mal el cobro» sin síntoma | No explica el mensaje de error ni la urgencia operativa | Añadir por qué no concilia hoy (importe duplicado, signo, etc.) |
 | Saltar **Qué se identificó** | Respuesta difusa | Una frase que una hecho + consecuencia |
 | Mezclar SQL/triggers en §7 | Audiencia incorrecta | Reservar detalle técnico para §5–6 |
+| §7 indica corregir un dato/documento sin nombrar la ventana donde se hace | El usuario u operador no sabe dónde ejecutar la acción | Resolver nombre y ruta exacta en 5C y citarla en §7; si no se confirma, declararlo en §9 |
 
 ### Consultas de viabilidad (§7)
 
@@ -461,26 +460,27 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | Proponer flujo manual que contradice triggers | Usuario fallará en pantalla | Validar secuencia, cobranza, estados |
 | Omitir workaround cuando la respuesta es NO | Ticket sin solución | Siempre pasos alternativos operativos |
 | Mezclar SQL/código en sección 7 | Audiencia incorrecta | Reservar para sección 5D |
+| Procedimiento recomendado sin nombrar la ventana/proceso exacto | Usuario no sabe dónde ejecutar la acción | Resolver nombre es_ES en 5C y citarlo en §7; si no se confirma, declararlo en §9 |
 | **Lista «Detalle por capacidad» Sí/No/Parcial en sección 7** | Confunde al usuario final; parece informe técnico | Matriz solo en secciones 3–5; sección 7 = respuesta directa en prosa |
 | Una sola respuesta sin desglose interno | Pregunta amplia mal analizada | Desglosar en pasos 0B/3 (consultor); redactar sección 7 unificada |
 
 ---
 
-## Paso 5 — Exploración: módulos, markdowns y código (cuando aplique)
+## Paso 5 — Exploración: repo del cliente (graphify + código) (cuando aplique)
 
-### 5A. Consulta de módulos (obligatoria)
+### 5A. Exploración de graphify y código (obligatoria)
 
-**Antes** de buscar en código, ejecutar el flujo de skill **`openbravo-modules`**:
+Toda revisión de módulo se hace sobre el **repo de código del cliente** — nunca sobre documentación pre-generada. Dos fuentes, en este orden:
 
-1. Descubrir knowledge roots: `docs_customization/knowledge/` y `docs/knowledge/`.
-2. Elegir módulos por dominio, keywords del ticket o `MANIFEST.json` / `INDEX.md`.
-3. Leer markdowns según prioridad definida en `openbravo-modules` §3.
-4. Anotar para sección **5D**: ventanas, procesos, mensajes, restricciones y handoff a módulos hermanos.
-5. **Verificar despliegue en repo** (`openbravo-modules` §4): indicar si el módulo tiene `src-db/` o es solo documentación. Los botones **solo-docs** no deben ir al workaround de §7 como acción principal si existe alternativa en código (ej. NC manual vs **Generar NC**).
+1. **`graphify-out/`** — descargar y filtrar `manifest.json` por el nombre del módulo candidato (mapa 5B) para saber qué clases/archivos existen ahí; es barato y orienta la lectura de código. `graph.json` es un puntero Git LFS inaccesible en la práctica y `.graphify_analysis.json` no indexa `.xml`, así que para lógica PL/SQL (triggers y funciones) el grafo no alcanza — pasar directo al punto 2.
+2. **Código fuente del módulo** (`src-db/database/model/functions/*.xml`, `src-core`, clases Java) — leer directamente los triggers, funciones PL/SQL y procesos que apliquen al síntoma. Es el paso que resuelve la mayoría de causas raíz de datos/lógica, no el grafo.
+3. Anotar para sección **5D**: ventanas (`AD_MENU`/`AD_WINDOW`), procesos (`AD_PROCESS`), mensajes de error (literal del código o del trigger) y restricciones encontradas.
+4. **Verificar despliegue en repo**: confirmar si el módulo tiene carpeta `src-db/` con lógica real o si el flujo que se está evaluando no tiene contraparte en código. Un workaround **sin código que lo respalde** no debe ir a §7 como acción principal si existe una alternativa con código (ej. NC manual vs proceso **Generar NC** con `AD_PROCESS` real). Este mismo criterio aplica a **cualquier acción correctiva**, no solo botones: si existe una ventana o proceso estándar del sistema para corregir el dato/documento afectado (ej. un ajuste de inventario, una reversión de documento), priorizarla en §7 sobre una corrección vía SQL o backend — el script SQL, si aplica, queda como respaldo técnico en las secciones 5–6, nunca como la única vía ofrecida al usuario.
+5. Si el repo de código no es accesible o no se pudo determinar dónde arranca el código del módulo, declararlo en sección 9 (no inventar ni suponer) y bajar confianza.
 
 ### 5B. Mapa dominio → módulos (punto de partida)
 
-| Dominio | Módulos / knowledge a revisar |
+| Dominio | Módulos a explorar en el repo |
 |---------|-------------------------------|
 | Conciliación / tesorería | `org.openbravo.advpaymentmngt`, `ec.com.sidesoft.detailed.paymentin`, `ec.com.sidesoft.deposit.reconciliation` |
 | Cobros/pagos | `detailed.paymentin`, `org.openbravo.advpaymentmngt` |
@@ -489,23 +489,25 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | NC / devoluciones venta | `creditNoteRefenence` (código), `saleorder.relations`; `financialcreditnote.sales.auto` **solo si tiene `src-db` en repo** |
 | Pre-cancelación / acuerdos | `pre.cancellations`, `payment.agreement`, `debitnote.interest.due` |
 | Crédito / cotización | `fast.quotation`, `unnoparts.credit.factory`, `credit.operation.request` |
-| POS | regla `openbravo-pos` + markdown del módulo retail |
+| POS | regla `openbravo-pos` + código del módulo retail |
 
-### 5C. Código (confirmar UI y reglas no documentadas)
+### 5C. Resolver nombres exactos de UI (ventanas, botones, procesos)
 
-1. Para **botones/campos citados en §7**: confirmar en `AD_FIELD.xml` / `AD_PROCESS.xml` del módulo (`openbravo-modules` §4).
-2. Si el markdown no cierra el caso: triggers, funciones PL o Java en `50-technical-db-triggers-functions.md` o búsqueda en `src/`.
+1. Para **botones/campos citados en §7**: confirmar en `AD_FIELD.xml` / `AD_PROCESS.xml` del módulo, en el repo de código del cliente.
+2. Para **la ventana donde el usuario debe ejecutar la acción correctiva** (ej. un ajuste de inventario, una reversión): resolver su nombre exacto y su ruta de menú en es_ES vía `AD_MENU.xml` / `AD_WINDOW.xml` del módulo correspondiente. Este nombre y ruta son los que van a §7 (ver plantilla) — **nunca** se generaliza a "la ventana correspondiente" o "consulte con su consultor" si ya se pudo confirmar en el código.
+3. Si `AD_MENU`/`AD_WINDOW`/`AD_FIELD` no cierran el caso: revisar triggers y funciones PL/SQL o Java en `src-db`/`src-core` directamente.
+4. Si, tras revisar el código, no se pudo confirmar el nombre exacto de la ventana, declararlo explícitamente en la sección 9 ("ventana no confirmada — requiere validación de un técnico") en vez de omitir la instrucción en §7 o inventar un nombre.
 
 Citar archivos/funciones solo cuando confirmen el veredicto. Traducir hallazgos a **lenguaje de proceso** en la sección 7.
 
-### 5D. Evidencia desde markdowns y código (obligatoria en sección 5)
+### 5D. Evidencia desde graphify y código (obligatoria en sección 5)
 
 Incluir bullets del tipo:
 
-- Módulo `{M}` — `{docs_customization|docs}/knowledge/30-functional-processes.md`: [proceso/botón y validación]
-- Módulo `{M}` — `35-messages-and-errors.md`: [mensaje y cuándo aparece]
+- Módulo `{M}` — `graphify-out/manifest.json`: [nº de entradas y archivos indexados del módulo]
+- Módulo `{M}` — código fuente: [archivo/función/trigger concreto abierto y qué confirma]
 - Módulo `{M}` — **`src-db` en repo: Sí/No** — si No, indicar módulo alternativo con código para la guía operativa
-- Módulo `{M}` — `AD_FIELD` / proceso confirmado: [nombre UI es_ES] (solo si aplica a pasos de usuario)
+- Módulo `{M}` — `AD_MENU`/`AD_FIELD` / proceso confirmado: [nombre UI es_ES] (solo si aplica a pasos de usuario)
 
 Esta sección alimenta la **guía operativa** (`openbravo-operational-walkthrough`): incluir solo módulos/procesos con **código confirmado** o flujo core verificado.
 
@@ -526,7 +528,7 @@ Esta sección alimenta la **guía operativa** (`openbravo-operational-walkthroug
 **Acción:**
 
 1. Subtipo B → Paso 0B: desglosar en emitir NC / impactar plan / parcial / por cuota.
-2. Skill **`openbravo-modules`**: leer markdowns de `creditNoteRefenence`, `saleorder.relations`, `postdated.check`, `detailed.paymentin`, `advpaymentmngt` (`docs_customization` primero).
+2. Explorar directamente en el repo del cliente (`graphify-out/` + código) los módulos `creditNoteRefenence`, `saleorder.relations`, `postdated.check`, `detailed.paymentin`, `advpaymentmngt`, siguiendo el Paso 5A.
 3. Veredicto cruzando core + personalización documentada; sección **5D** con módulos citados.
 4. Sección 7: plantilla viabilidad, copiable al ticket.
 
@@ -538,16 +540,15 @@ Esta sección alimenta la **guía operativa** (`openbravo-operational-walkthroug
 
 ---
 
-## Encadenamiento con `openbravo-modules` (obligatorio)
+## Consulta de módulos (obligatoria)
 
 En **todo** análisis (incidencia o viabilidad):
 
-1. Tras Paso 0 / 0B, invocar skill **`openbravo-modules`** (§1–§3 de esa skill).
-2. Leer **`docs_customization/knowledge/`** del módulo si existe; complementar con **`docs/knowledge/`**.
-3. Incorporar en secciones 3–5D: procesos, ventanas, mensajes y restricciones documentados.
-4. **No contradecir** un markdown de personalización con suposiciones del core.
+1. Tras Paso 0 / 0B, identificar los módulos candidatos (mapa 5B) y explorar directamente el repo de código de ese cliente para esos módulos — `graphify-out/` y código fuente — siguiendo el Paso 5A.
+2. Incorporar en secciones 3–5D: procesos, ventanas, mensajes y restricciones confirmados en el repo.
+3. No contradecir lo confirmado en el código con suposiciones genéricas del core sin evidencia del proyecto.
 
-Si no hay markdown para un módulo candidato, declararlo en sección 9 y bajar confianza; entonces sí explorar código directamente.
+Si el repo de código no es accesible para un módulo candidato, declararlo en sección 9 y bajar confianza.
 
 ---
 
@@ -560,10 +561,10 @@ La sección 7 es resumen copiable. Para manual en pantalla (menús, botones, cam
 Activa skill **`openbravo-operational-walkthrough`**, pasando:
 
 - Sección 7 del análisis (procedimiento resumido).
-- **Sección 5D** (módulos y markdowns ya consultados).
+- **Sección 5D** (módulos, graphify y código ya explorados).
 - Matriz de sub-capacidades (viabilidad) o causa raíz (incidencia).
 
-La guía operativa **debe** volver a consultar `openbravo-modules` para nombres UI exactos (es_ES) y validaciones de pantalla, y aplicar formato **compacto** según `openbravo-operational-walkthrough/GUIDE-SCHEMA.md` (Revisar → Corregir → Validar; sin escalar a soporte como única salida).
+La guía operativa **debe** volver a explorar directamente el repo del cliente (código, `AD_MENU`/`AD_FIELD`) para nombres UI exactos (es_ES) y validaciones de pantalla, y aplicar formato **compacto** según `openbravo-operational-walkthrough/GUIDE-SCHEMA.md` (Revisar → Corregir → Validar; sin escalar a soporte como única salida).
 
 ---
 
@@ -571,5 +572,10 @@ La guía operativa **debe** volver a consultar `openbravo-modules` para nombres 
 
 - Prompts para usuarios: [PROMPT-SNIPPET.md](PROMPT-SNIPPET.md)
 - Guía operativa: skill `openbravo-operational-walkthrough`
-- **Hub documentación modular:** skill `openbravo-modules` (`docs/knowledge` + `docs_customization/knowledge`)
 - BDC: solo si el usuario activa BDC explícitamente
+
+---
+
+## Uso desde `triage-glpi-auto` (ejecución automática)
+
+Cuando esta skill se invoca como motor de diagnóstico del Automation `triage-glpi-auto` (triage de GLPI), aplica una regla adicional de consistencia: si el módulo de profundización de causa raíz de ese orquestador (su Paso 5-B) encuentra un mecanismo o alcance más profundo que el identificado en una primera pasada, ese hallazgo se incorpora a **este mismo documento** (secciones 3, 4, 5 y 9) **antes** de redactar la sección 7 — nunca se genera una segunda sección 7 ni un comentario de corrección aparte para el mismo ticket. El documento y la sección 7 que produce esta skill son, por ticket y por corrida, únicos.
