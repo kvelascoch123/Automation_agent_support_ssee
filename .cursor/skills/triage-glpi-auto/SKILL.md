@@ -1,6 +1,6 @@
 ---
 name: triage-glpi-auto
-description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI. Maneja además dos casos que cortan el flujo de análisis: solicitudes de Capacitación (comentario público CX, estado Planificado, asignado a kvelasco, campo Fuente de solicitud = Capacitación) y Proyecto no registrado (marcador [TRIAGE-PROYECTO-NO-REGISTRADO], estado Planificado, asignado a bruno díaz). Antes de cerrar cualquier diagnóstico, aplica un módulo obligatorio de investigación de causa raíz en profundidad (trazabilidad de flujo completo, generación y descarte de hipótesis alternativas, y verificación del alcance real del patrón de datos) en vez de detenerse en la primera causa aparente. Detecta corridas concurrentes/duplicadas antes de publicar nada y garantiza, por corrida, exactamente un análisis de 9 pasos y una única respuesta sugerida al usuario (nunca una "segunda opinión" ni un comentario de corrección aparte).
+description: Agente orquestador de triage automático de tickets GLPI (multi-cliente). Lee tickets Nuevos, resuelve a qué cliente/repo pertenece el solicitante vía registro_clientes/clientes.json, lee el contexto específico de ese cliente vía MCP GitHub (sin clonar), aplica las metodologías de openbravo-triage-tecnico (5 mínimos funcionales, pistas de módulo) y openbravo-soporte-sidesoft (taxonomía de clasificación) junto con el motor común de análisis de 9 pasos (openbravo-functional-ticket-analysis), evalúa acertividad, aplica preguntas de aclaración cuando el contexto es insuficiente, y publica followups en GLPI. Maneja además dos casos que cortan el flujo de análisis: solicitudes de Capacitación (comentario público CX, estado Planificado, asignado a kvelasco, campo Fuente de solicitud = Capacitación) y Proyecto no registrado (marcador [TRIAGE-PROYECTO-NO-REGISTRADO], estado Planificado, asignado a bruno díaz). Antes de cerrar cualquier diagnóstico, aplica un módulo obligatorio de investigación de causa raíz en profundidad (trazabilidad de flujo completo hasta el componente técnico exacto —jrxml/SQL/trigger/función/clase Java—, generación y descarte de hipótesis alternativas —incluyendo cualquier ticket relacionado o precedente histórico, que se trata como hipótesis a validar contra datos concretos de este ticket, nunca como conclusión automática—, verificación del alcance real del patrón de datos, y verificación de consistencia cuando la corrección toca un valor de configuración replicado en varios campos/registros similares) en vez de detenerse en la primera causa aparente o en el primer archivo/precedente parecido. Detecta corridas concurrentes/duplicadas antes de publicar nada y garantiza, por corrida, exactamente un análisis de 9 pasos y una única respuesta sugerida al usuario (nunca una "segunda opinión" ni un comentario de corrección aparte).
 ---
 
 # Agente Orquestador de Triage GLPI — ejecución automática (cron)
@@ -355,6 +355,23 @@ Aplicar los **5 mínimos funcionales** de `openbravo-triage-tecnico` sobre la de
 
 Si algo de esto no se ejecuta, declararlo como omitido en la sección 9 del análisis. **Nunca escribir que se revisó una fuente que no se abrió en esta corrida**, ni apoyarse en la conclusión de una corrida anterior para afirmar evidencia en la actual.
 
+#### 3-bis. Rastreo obligatorio del componente exacto (no sustituir por un archivo "parecido")
+
+Existe para impedir un fallo concreto ya ocurrido: ante un documento impreso con datos incorrectos, `graphify-out/manifest.json` no resolvió la ruta (404) y, en vez de rastrear el proceso real, el análisis tomó como base un `.jrxml` de un módulo distinto (Sales Order) solo porque estaba disponible y "parecía" relacionado, sin confirmar que fuera el archivo que efectivamente genera ese documento. La causa raíz resultante quedó construida sobre un componente no verificado.
+
+Cuando graphify no resuelve el archivo por nombre, **simular el proceso real en vez de suponer un componente similar**: reconstruir la cadena completa hasta identificar con certeza el artefacto responsable —
+
+```
+Ventana/proceso/botón que el usuario dispara
+  → definición del reporte o proceso (AD_Process, AD_ReportView, o el proceso/reporte configurado en la ventana)
+  → plantilla de impresión exacta (jrxml) o consulta/función que arma el documento
+  → función(es) PL/pgSQL, trigger(s) o clase(s) Java involucradas
+```
+
+- Cada eslabón se confirma leyendo el código o la configuración real (Application Dictionary, referencias cruzadas en el propio repo, o el resultado de `manifest.json` filtrado por módulo) — nunca se asume por similitud de nombre o de módulo.
+- Si no se logra confirmar el eslabón siguiente con las fuentes disponibles en esta corrida, no se continúa el diagnóstico sobre un archivo "candidato" sin confirmar: se declara el estado `COMPONENTE_NO_CONFIRMADO` en la sección 9 (ver tabla de evidencia del Paso 5-A) y la sección 4 (Causa raíz) no puede marcarse como "Confirmada" apoyada en ese archivo — como máximo queda como hipótesis a confirmar por un técnico.
+- Este mismo rastreo aplica a cualquier incidencia cuya causa esté en un proceso, trigger, función o reporte del sistema — no es exclusivo de documentos impresos.
+
 ### Qué esperar de graphify (medido sobre el repo de Unnoparts, 2026-08-12)
 
 `graphify-out/` tiene cuatro archivos y **no se leen vía MCP** — se bajan a `/tmp` con `curl` usando el `download_url` del listado de directorio y se procesan en local:
@@ -414,14 +431,14 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 | Fuente | Estado | Dato probatorio de esta corrida |
 |---|---|---|
 | `graphify-out/manifest.json` | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA | nº de entradas y archivos indexados del módulo, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path` |
-| Código fuente del módulo | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA | archivos y funciones concretas abiertas, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path` |
+| Código fuente del módulo | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA / COMPONENTE_NO_CONFIRMADO | archivos y funciones concretas abiertas, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path`, o la cadena de rastreo del punto 3-bis y en qué eslabón no se pudo confirmar el siguiente |
 | `Detalles Adicionales:` de imágenes (Paso 3-A) | LEÍDO / SIN IMÁGENES | identificador(es) extraído(s) usado(s) como filtro, o motivo de no viable |
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo — incluir si se detectó algún `null` anómalo en campo relacional (4-B) |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO / SIN CONFIG_DIR CONFIGURADO | archivo y contenido relevante, o que `config_dir` es `null` en `clientes.json` |
 | Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
 | Alcance real del patrón (Paso 5-B, punto 5) | MEDIDO / NO APLICA | número obtenido por la consulta de dimensionamiento y la consulta usada, o el motivo por el que no aplica (causa raíz sin flujo/módulo compartido con otros registros) |
 
-**`OMITIDO` vs `REPO_INACCESIBLE` vs `ESTRUCTURA_NO_DETECTADA`**: no son intercambiables. `OMITIDO` es para un archivo puntual que legítimamente no existe en un repo válido y accesible. `REPO_INACCESIBLE` (Paso 2-B, punto 1) es para cuando el repo de código entero no respondió — problema de configuración en `clientes.json` (owner/repo o permisos). `ESTRUCTURA_NO_DETECTADA` (Paso 2-B, punto 2) es para cuando el repo sí es accesible pero la auto-detección de `base_path` dio cero o múltiples candidatas — no se pudo determinar dónde arranca el código, y hace falta cargar `base_path` a mano en `clientes.json`. Los tres apuntan a causas y soluciones distintas — no colapsarlos en uno solo.
+**`OMITIDO` vs `REPO_INACCESIBLE` vs `ESTRUCTURA_NO_DETECTADA` vs `COMPONENTE_NO_CONFIRMADO`**: no son intercambiables. `OMITIDO` es para un archivo puntual que legítimamente no existe en un repo válido y accesible. `REPO_INACCESIBLE` (Paso 2-B, punto 1) es para cuando el repo de código entero no respondió — problema de configuración en `clientes.json` (owner/repo o permisos). `ESTRUCTURA_NO_DETECTADA` (Paso 2-B, punto 2) es para cuando el repo sí es accesible pero la auto-detección de `base_path` dio cero o múltiples candidatas — no se pudo determinar dónde arranca el código, y hace falta cargar `base_path` a mano en `clientes.json`. `COMPONENTE_NO_CONFIRMADO` (punto 3-bis) es distinto de los tres anteriores: el repo es accesible y el archivo que se leyó existe, pero no se confirmó que sea el componente que realmente genera el proceso/documento del ticket — es una falla de identificación, no de acceso. Los cuatro apuntan a causas y soluciones distintas — no colapsarlos en uno solo.
 
 No sirve como dato probatorio: una cita de la memoria, una conclusión de una corrida anterior, ni una descripción genérica del archivo. Sirve un número, un nombre de archivo o un fragmento que solo se puede conocer habiéndolo abierto ahora.
 
@@ -461,6 +478,8 @@ Identificar explícitamente **en qué eslabón se rompe la cadena**, y distingui
 
 Cuando el flujo pasa por un módulo custom (prefijo propio, ej. `SSDPM`) en vez del flujo estándar de Openbravo, señalarlo explícitamente — es habitualmente el punto donde una sincronización esperada por el core deja de cumplirse.
 
+Cuando el eslabón "Backend (función/trigger/servicio)" de esta cadena involucra código o una plantilla de impresión, este eslabón se llena únicamente con el resultado del rastreo obligatorio del punto 3-bis (Paso 5) — nunca con un archivo similar no confirmado como responsable.
+
 #### 3. Tabla de hipótesis y descarte
 Cuando exista más de una causa plausible para el mismo síntoma, documentar el descarte con esta estructura (va en la sección 9 del documento, como respaldo de la sección 4):
 
@@ -471,6 +490,12 @@ Cuando exista más de una causa plausible para el mismo síntoma, documentar el 
 
 Si no hay evidencia suficiente para confirmar ninguna con certeza, decirlo explícitamente en la sección 9 (Datos faltantes) en vez de presentar la más plausible como si fuera un hecho confirmado.
 
+**Un ticket relacionado o precedente histórico (por similitud de síntoma, de módulo, o detectado por el propio motor en la sección 1 "Clasificación") es una hipótesis más de esta tabla, nunca una conclusión que se adopta por defecto.** Antes de marcarlo "Confirmada":
+- Identificar al menos un dato concreto y verificable de **este** ticket (no del precedente) que la hipótesis obliga a que sea cierto — ej. si el precedente atribuye el síntoma a un patrón multi-línea, verificar cuántas líneas tiene el documento real de este ticket antes de dar el precedente por aplicable.
+- Verificar ese dato contra la fuente correspondiente (BD, código, adjuntos) — un chequeo tan simple como contar líneas o revisar un campo puede bastar para falsear la hipótesis por sí solo, y se hace **antes**, no después, de redactar la causa raíz.
+- Si el dato contradice la hipótesis, o el propio análisis (rastreo de código, BD) sostiene una causa distinta con evidencia propia más fuerte, marcar el ticket relacionado como "Descartada" en esta tabla y declararlo explícitamente en la sección 1 ("Relacionado: ticket {id} — revisado, sin relación confirmada con la causa raíz de este ticket") y en la sección 4, en vez de dejarlo como hipótesis principal o mencionarlo como si fuera la solución.
+- Solo se marca "Confirmada" cuando el dato concreto de este ticket efectivamente corrobora el mecanismo del precedente — la similitud temática o de módulo, por sí sola, nunca es suficiente para confirmarla.
+
 #### 4. Cuatro niveles de causa raíz (obligatorios en la sección 4 del documento)
 La sección "Causa raíz" del motor de 9 pasos no queda completa con un solo nivel de explicación. Debe distinguir:
 1. **Síntoma** — qué reporta o percibe el usuario.
@@ -478,13 +503,19 @@ La sección "Causa raíz" del motor de 9 pasos no queda completa con un solo niv
 3. **Causa raíz** — por qué existe esa condición (qué proceso/flujo la generó).
 4. **Causa estructural** — por qué el sistema permitió que esa condición llegara a producirse sin corregirse sola (ej. una sincronización que el flujo estándar hace pero el módulo custom no replica).
 
-#### 5. Verificación de alcance real — obligatoria cuando la causa raíz es un patrón de datos o de proceso
+#### 5. Verificación de alcance real — obligatoria cuando la causa raíz es un patrón de datos, de proceso, o un valor de configuración replicado
 Si la causa raíz identificada es una **condición de datos o un gap de un flujo/módulo** (no un error de configuración puntual de un solo registro), **no dar por buena la conclusión de "caso aislado" sin antes medirlo**:
 
 1. Formular una consulta de diagnóstico (vía `pg_query`, Paso 3-B) que cuente o liste cuántos otros registros del cliente comparten exactamente la misma condición estructural que produjo el síntoma (mismo patrón de campos NULL/residuales, mismo módulo de origen, mismo tipo de documento).
 2. Correr esa consulta contra la BD del cliente y registrar el número real obtenido — este resultado es evidencia obligatoria de la sección 9, con el mismo criterio del Paso 5-A (un número obtenido en esta corrida, no una estimación).
 3. Si el número es significativamente mayor a 1, la sección 4 (Causa raíz) y la sección 8 (Prevención) del documento deben reflejar que se trata de un **patrón sistémico**, no de un caso puntual, y la sección 5 (Plan de solución) debe seguir el punto 7 de abajo (fases de corrección).
 4. Si no hay indicios de que la condición pueda repetirse (ej. error de configuración específico de un solo maestro, sin relación con un flujo o módulo compartido), se puede omitir este chequeo — dejar registrado explícitamente el motivo ("no aplica: causa raíz específica de este registro, sin flujo/módulo compartido con otros documentos") en vez de omitirlo en silencio.
+
+**Caso particular — la solicitud implica modificar un valor de configuración que sigue un patrón replicado en varios campos o registros similares** (ej. una fórmula que agrupa conceptos y debe incluir uno nuevo, un parámetro que se repite por sucursal/organización, una regla de validación configurada en varias ventanas): el mismo principio de "no cerrar en el primer caso" aplica, pero el alcance se mide por **inspección de los campos/registros hermanos**, no por conteo de filas de un patrón de datos roto:
+
+1. Identificar, por BD o por código, todos los campos/registros que agrupan el mismo tipo de elemento que la solicitud pide modificar (ej. todas las fórmulas de Nómina que suman bonos del mismo tipo que el concepto en cuestión, no solo la primera que se detecte).
+2. Listar en la sección 5 (Plan de solución) **cada** campo/registro que debe actualizarse para que el cambio quede consistente — no solo el que motivó el ticket.
+3. Si se detecta que algunos campos hermanos ya incluyen el patrón correcto y otros no, señalarlo explícitamente — es evidencia de que el gap es sistémico (aplica también el punto 3 de arriba) y no un olvido puntual.
 
 #### 6. Workaround vs. solución definitiva — nunca presentar uno como el otro
 Cuando exista una forma de mitigar el síntoma mientras se corrige la causa raíz de fondo, la sección 5 (Plan de solución) debe declarar ambas por separado y explícitamente etiquetadas:
@@ -525,6 +556,7 @@ Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, 
 - Si además hay un bug de sistema real: §7 sigue siendo el flujo correcto para el usuario; el detalle técnico del bug y su escalamiento van en 5-6 / comentario privado.
 - **Cuando la solución operativa (punto 4) implique ejecutar una acción en el sistema**, §7 debe indicar el **nombre exacto de la ventana** donde se hace, tal como aparece en el ERP (ej. "Gestión de Almacén → Transacciones → Ajuste de Inventario Físico"), junto con los datos concretos a ingresar (producto, cantidad, tipo de movimiento, almacén). Ese nombre se obtiene del código/documentación del cliente (Paso 3, `graphify-out/`, conocimiento común del módulo) — nunca se inventa ni se generaliza a "consulte con su consultor". Si no se puede confirmar la ventana exacta con las fuentes disponibles en esta corrida, declararlo explícitamente en la sección 9 en vez de omitir el paso.
 - **Cuando exista un camino operativo estándar en el sistema** para corregir el dato afectado (ej. un ajuste de inventario Alta/Baja desde la ventana estándar) y no solo mediante script SQL, §7 debe priorizar y detallar ese camino operativo como la vía principal — el script sugerido del Paso 6-B queda como respaldo técnico en las secciones 5-6, no como la única opción ofrecida.
+- **Cuando la solicitud pide cambiar un valor de configuración que vive en un campo de interfaz** (ej. la fórmula de un concepto, un parámetro, un texto de validación) y no es una corrección de datos rotos: no basta con describir la acción en términos genéricos ("agregar X a la fórmula", "incluir el concepto junto a los demás"). El análisis debe (1) consultar por BD el valor/fórmula actual del campo (Paso 3-B), (2) construir el valor nuevo exacto siguiendo el mismo patrón que ya usan los campos/registros hermanos identificados en el punto 5 de arriba, (3) dejar ese script de actualización listo en el Paso 6-B (mismo formato: texto sugerido, nunca ejecutado automáticamente), y (4) en §7 indicar, en lenguaje llano y sin SQL ni nombres de tabla, el campo/ventana exacto y el valor final que debe quedar ahí — de modo que quien aplique el cambio (por script o manualmente desde la interfaz) sepa con certeza qué poner, sin tener que deducirlo.
 - El bloque de acciones a ejecutar dentro de §7 se titula siempre **"Solución a aplicar o verificar"** (nunca "Qué hacer ya" / "Qué hacer ahora") — mantener este título de forma consistente en todos los tickets.
 
 Producto esperado: el documento completo de 9 secciones (Clasificación, Entendimiento, Diagnóstico técnico, Causa raíz, Plan de solución, Escalamiento, **Respuesta sugerida al usuario final — §7**, Prevención, Datos faltantes), siguiendo el subtipo que corresponda (Incidencia o Viabilidad) tal como esa skill lo define.
@@ -748,3 +780,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca publicar un comentario de corrección/profundización técnica (tipo `[TRIAGE-CORRECCION]`) por separado, después de ya haber publicado el análisis de 9 pasos y la respuesta sugerida. Toda profundización de causa raíz del Paso 5-B se incorpora al mismo documento y a la misma respuesta **antes** de publicar (Paso 6) — nunca como un comentario adicional posterior.
 - Nunca publicar el análisis de 9 pasos (6.2) si no pasó el control de calidad de esa sección (9 secciones completas y coherentes entre sí) — regenerar una vez antes de publicar, en vez de publicar una versión confusa o incompleta.
 - Nunca dejar la sección de acciones de §7 sin el nombre exacto de la ventana del sistema cuando la solución implique una acción operativa en el ERP — si no se puede confirmar con las fuentes de esta corrida, declararlo explícitamente en la sección 9 en vez de omitir la instrucción o generalizarla.
+- Nunca adoptar un ticket relacionado o precedente histórico (propio o detectado por el motor) como causa raíz de este ticket sin haberlo falseado contra un dato concreto de este ticket (Paso 5-B, punto 3) — la similitud de síntoma o de módulo nunca es evidencia suficiente por sí sola. Si no se confirma, o si el análisis propio sostiene una causa distinta, declararlo explícitamente sin relación en las secciones 1 y 4, nunca dejarlo implícito como la solución.
+- Nunca fijar la causa raíz sobre un archivo de código (jrxml, función, trigger, clase Java) que no se haya confirmado, mediante el rastreo del Paso 5 punto 3-bis, como el componente real responsable del proceso/documento del ticket — un archivo "similar" o del mismo módulo no confirmado se registra como `COMPONENTE_NO_CONFIRMADO`, no como base de un diagnóstico cerrado.
+- Nunca describir en términos genéricos una solución que requiere cambiar un valor de configuración de interfaz (fórmula, parámetro, texto de validación) pudiendo consultarlo por BD — debe incluir el script de actualización sugerido (Paso 6-B) con el valor nuevo exacto, y §7 debe indicar ese mismo valor en lenguaje llano para quien vaya a aplicarlo desde la interfaz.
+- Nunca dar por resuelto un cambio de configuración replicado (ej. una fórmula que agrupa conceptos) revisando un solo campo/registro — identificar y listar todos los campos/registros hermanos que deben quedar consistentes (Paso 5-B, punto 5, caso particular de configuración) antes de cerrar la sección 5.

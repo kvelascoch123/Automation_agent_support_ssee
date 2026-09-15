@@ -22,7 +22,7 @@ Esta skill puede activarse en dos contextos distintos, y el comportamiento permi
 | ¿Puede generar SQL de escritura (INSERT/UPDATE/DELETE/DDL) para la BD de producción del ERP del cliente? | **Sí**, si el técnico lo pide explícitamente — él decide su ejecución | **No** — solo como texto sugerido dentro de un comentario privado, para revisión humana posterior. Nunca se ejecuta. |
 | ¿Puede ejecutar SQL él mismo contra esa BD? | Solo `SELECT` vía MCP-DB (restricción del servidor, no de esta skill) | Solo `SELECT` vía MCP-DB, igual que en interactivo |
 
-**Regla dura para el modo automático**: cuando esta metodología se aplica dentro de `triage-glpi-auto`, cualquier corrección que requiera tocar tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) se redacta como **sugerencia en el comentario privado técnico**, con la nota "Script sugerido — requiere revisión y ejecución manual de un técnico", y el flujo automático **jamás la ejecuta**. Esto es distinto de los `INSERT` controlados que sí ejecuta el flujo automático sobre las tablas propias de GLPI (`glpi_itilfollowups`, tabla de log) — esos siguen igual que siempre.
+**Regla dura para el modo automático**: cuando esta metodología se aplica dentro de `triage-glpi-auto`, cualquier corrección que requiera tocar tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.) se redacta como **sugerencia en el comentario privado técnico**, con la nota "Script sugerido — requiere revisión y ejecución manual de un técnico", y el flujo automático **jamás la ejecuta**. Esto es distinto de los `INSERT` controlados que sí ejecuta el flujo automático sobre las tablas propias de GLPI (`glpi_itilfollowups`, tabla de log) — esos siguen igual que siempre. Esta misma regla aplica también cuando la corrección es un **cambio de valor de configuración** (una fórmula, un parámetro) y no un dato roto: el script que actualiza ese valor sigue el mismo tratamiento — texto sugerido con el valor nuevo exacto, nunca ejecutado por el flujo automático.
 
 ---
 
@@ -103,6 +103,8 @@ Sospechas iniciales (a confirmar, NO son la respuesta):
 | "el pago no se aplica / no concilia" | Tesorería / CxC-CxP | ¿Pago en borrador o procesado? ¿Factura destino contabilizada? |
 | "la nómina no procesa / da error" | Nómina | ¿Período abierto? ¿Tipo de documento del asiento configurado? |
 | "no puedo dar de baja el activo" | Activos Fijos | ¿Depreciaciones futuras contabilizadas? ¿Bien de control con amortización? |
+| "el documento/contrato sale duplicado o repite los mismos datos dos veces" | Terceros / Business Partner / Solicitud de Crédito | ¿Existe más de un registro de comprador/tercero (ej. `COM-S`) asociado a la misma operación? ¿Todos con el mismo rol (ej. "solicitante"), sin un "codeudor" que distinga uno del otro? |
+| "hay que incluir/excluir un concepto en el cálculo de un rubro (aportable, base de un bono, de una provisión)" | Nómina | Más allá del campo de configuración del concepto (ej. "aportable"), ¿qué otras fórmulas agrupan conceptos del mismo tipo (Decimotercera, Fondo de Reserva, Aporte Patronal, Aporte IESS, Vacaciones, etc.) y también deberían incluir/excluir este concepto para quedar consistentes? |
 
 > Punto de partida, no límite. Usa también `casos_de_uso_openbravo_erp.md` y los archivos por módulo (`01-Facturacion-Electronica.md`...`15-Plataforma-Configuracion.md`, si están cargados) para afinar.
 
@@ -119,8 +121,10 @@ Sospechas iniciales (a confirmar, NO son la respuesta):
    - Dato del cliente erróneo
    - Bug real (último recurso, no la primera hipótesis)
 4. **Da la acción correctiva paso a paso**, priorizando el proceso del sistema (descontabilizar, reactivar, reprocesar).
+5. **Si la causa raíz es "configuración faltante o incorrecta" y el valor vive en un campo que sigue un patrón replicado** (una fórmula que agrupa conceptos, un parámetro repetido por sucursal/organización): no te detengas en el primer campo que motivó el ticket — revisa los campos/registros hermanos que siguen el mismo patrón y verifica si también deberían llevar el mismo ajuste, antes de dar la corrección por completa.
+6. **Si la causa raíz señala un archivo de código, jrxml, función o trigger específico como responsable**: confirma que ese archivo es efectivamente el que interviene en el proceso reportado (rastreando desde la ventana/acción que el usuario ejecuta hasta el artefacto exacto) antes de darlo como causa cerrada — un archivo del mismo módulo o de nombre parecido, sin esa confirmación, se reporta como sospecha a verificar, no como diagnóstico cerrado.
 
-> **Uso dentro de `triage-glpi-auto`**: esta categorización de causa raíz (5 tipos) enriquece la sección "Causa raíz probable" del motor de 9 pasos (`openbravo-functional-ticket-analysis`) — úsala ahí como el vocabulario estándar de clasificación.
+> **Uso dentro de `triage-glpi-auto`**: esta categorización de causa raíz (5 tipos) enriquece la sección "Causa raíz probable" del motor de 9 pasos (`openbravo-functional-ticket-analysis`) — úsala ahí como el vocabulario estándar de clasificación. Los puntos 5 y 6 de arriba corresponden, en ese flujo, a la verificación de alcance por consistencia de configuración y al rastreo obligatorio de componente (Paso 5-B) del orquestador.
 
 ---
 
@@ -135,7 +139,7 @@ Alias `glpi`, schema `glpidb`, solo lectura. Estados: 1–4 activos, 5 resuelto,
 
 **Modo interactivo** — si el técnico pide explícitamente un script de corrección (`INSERT`/`UPDATE`/`DELETE`/`DDL`) para ejecutarlo él mismo: entrégalo completo, con nota técnica (qué hace, qué filas afecta, si conviene `BEGIN...COMMIT`, respaldo previo). No lo condiciones a "confirmar permiso" — el técnico ya tiene autoridad sobre la BD del cliente.
 
-**Modo automático (dentro de `triage-glpi-auto`)** — cualquier script correctivo se redacta como **texto dentro del comentario privado técnico**, encabezado con: *"⚠️ Script sugerido — requiere revisión y ejecución manual. No fue ejecutado automáticamente."* Nunca se corre.
+**Modo automático (dentro de `triage-glpi-auto`)** — cualquier script correctivo, incluido un cambio de valor de configuración (fórmula, parámetro), se redacta como **texto dentro del comentario privado técnico**, encabezado con: *"⚠️ Script sugerido — requiere revisión y ejecución manual. No fue ejecutado automáticamente."* Nunca se corre. El script debe traer el valor actual consultado por BD y el valor nuevo exacto — nunca una descripción genérica de qué agregar.
 
 > **Nota de infraestructura pendiente**: para que el motor pueda verificar diagnósticos contables contra datos reales (no solo inferir desde el texto del ticket), se necesita un MCP de PostgreSQL de solo lectura hacia la BD de Openbravo de cada cliente — separado del MCP `glpi` (que es MySQL). Ver la sección de infraestructura al final de este documento.
 
@@ -158,6 +162,8 @@ Si la resolución excede al técnico (reapertura de período, anulación de rete
 - **Modo automático**: cualquier SQL de escritura sobre el ERP del cliente es solo texto sugerido, nunca ejecutado.
 - Prioriza el proceso del sistema (descontabilizar, reactivar, reprocesar) como vía recomendada.
 - **Nunca** afirmes un comportamiento del sistema no documentado. Si no hay certeza, dilo y di cómo verificarlo.
+- **Nunca** des por cerrada una causa raíz de tipo "archivo de código específico" sin haber confirmado que ese archivo interviene realmente en el proceso reportado (Paso 3, punto 6).
+- **Nunca** des por completa una corrección de configuración replicada (fórmula, parámetro) revisando solo el campo que motivó el ticket, sin revisar sus campos/registros hermanos (Paso 3, punto 5).
 - Recuerda el orden inverso de reversión: para corregir A en un flujo A→B→C, se revierte C, luego B, luego A.
 - Descontabilizar antes de reactivar/anular cualquier documento que haya generado asientos.
 - Retenciones en Ecuador: tributariamente sensibles, máxima precaución, respaldo en ATS, escalar si hay duda.
