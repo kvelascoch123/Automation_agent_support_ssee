@@ -361,6 +361,7 @@ Paso 3 — [...]
 | Unir causa de negocio + síntoma si ambas están evidenciadas | §7 solo con parche de datos sin decir por qué se registró mal |
 | Pasos numerados accionables (reactivar, corregir, conciliar) | SQL, IDs de trigger, nombres de columnas |
 | **Nombrar la ventana exacta (ruta de menú es_ES, confirmada en 5C)** cuando la solución sea una acción de UI | Decir «consulte a su consultor» u omitir la ruta cuando el nombre ya se confirmó en el código/AD_MENU |
+| Cuando la causa sea una regla de negocio/configuración (aun si el veredicto es "comportamiento esperado"), decir **dónde se configura** esa regla (5C, punto 5) | Nombrar la regla ("la facturación es Después de entregado") sin decir dónde se define ni cómo cambiarla si el negocio lo requiere |
 | Cerrar con **Importante** breve | Escalar a soporte como única salida |
 
 **Ejemplo de tono (conciliación — devolución de anticipo mal registrada):**
@@ -419,6 +420,7 @@ Respecto a su consulta sobre [operación en una frase]:
 | Pasos numerados 1, 2, 3… accionables | Pasos genéricos («validar en sistema») |
 | Mencionar orden de cuotas / secuencia si aplica | Suponer que el usuario conoce APRM o triggers |
 | **Nombrar la ventana/proceso exacto (es_ES, confirmado en 5C)** cuando el procedimiento recomendado sea una acción en pantalla | Dar pasos genéricos («ingrese al sistema y ajuste») cuando el nombre ya se confirmó en el código |
+| Cuando la respuesta dependa de una regla de negocio/configuración, decir **dónde se configura** (5C, punto 5) por si el cliente quiere un comportamiento distinto | Explicar la regla sin decir dónde se define ni cómo ajustarla |
 | Cerrar con **Importante** breve | Inventario de módulos o referencias técnicas |
 
 **Ejemplo de tono (NC parcial + plan por cuota):**
@@ -507,6 +509,7 @@ Toda revisión de módulo se hace sobre el **repo de código del cliente** — n
 2. Para **la ventana donde el usuario debe ejecutar la acción correctiva** (ej. un ajuste de inventario, una reversión): resolver su nombre exacto y su ruta de menú en es_ES vía `AD_MENU.xml` / `AD_WINDOW.xml` del módulo correspondiente. Este nombre y ruta son los que van a §7 (ver plantilla) — **nunca** se generaliza a "la ventana correspondiente" o "consulte con su consultor" si ya se pudo confirmar en el código.
 3. Si `AD_MENU`/`AD_WINDOW`/`AD_FIELD` no cierran el caso: revisar triggers y funciones PL/SQL o Java en `src-db`/`src-core` directamente.
 4. Si, tras revisar el código, no se pudo confirmar el nombre exacto de la ventana, declararlo explícitamente en la sección 9 ("ventana no confirmada — requiere validación de un técnico") en vez de omitir la instrucción en §7 o inventar un nombre.
+5. **Cuando la causa raíz sea una regla de negocio controlada por un campo de configuración** (ej. una regla de facturación, un flag de un tipo de documento, un parámetro de módulo) — **incluso cuando el veredicto sea "comportamiento esperado, no un error"** — resolver por código/BD dónde se configura esa regla (ventana, pestaña y campo exactos, o tabla/columna si no tiene ventana propia) y citarlo en la sección 4 o 5. No basta con nombrar la regla ("la facturación es Después de entregado"); hay que decir **dónde se define** ese valor, para que quien lo lea sepa dónde ir si el negocio decide que quiere un comportamiento distinto. Si además el cambio de esa regla es una acción que el cliente podría querer tomar, ofrecerlo como paso opcional en §7 ("Si prefieren que esto se genere de otra forma, el ajuste se hace en [ventana/campo]"), no dejarlo solo en las secciones técnicas.
 
 Citar archivos/funciones solo cuando confirmen el veredicto. Traducir hallazgos a **lenguaje de proceso** en la sección 7.
 
