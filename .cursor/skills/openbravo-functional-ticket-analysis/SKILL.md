@@ -137,6 +137,7 @@ Indica **confianza** y **requiere desarrollo** (Sí/No/Por confirmar).
 4. **Exploración obligatoria del repo del cliente:** identificar 1–4 módulos candidatos (por dominio/keywords, ver mapa 5B) y explorar directamente el repo de código de ese cliente para esos módulos — vía `graphify-out/` y código fuente (Java, SQL/XML functions, AD_*), siguiendo el procedimiento del Paso 5A — antes de concluir.
 5. Diferenciar: error del **usuario/proceso** vs **defecto del sistema** vs **dato maestro**.
 6. Antes de proponer solución: **¿el usuario usó el documento/proceso correcto según lo que confirma el código?**
+7. **Comparación obligatoria contra pares/registros similares — antes de cerrar cualquier diagnóstico, incluida la conclusión de "no hay error" o "es el comportamiento esperado".** Encontrar que el registro es consistente con su propio historial (ej. "otros documentos del mismo tipo se comportan igual") **no es evidencia suficiente** para cerrar el caso — es solo consistencia interna, no corrección frente a sus pares. Antes de redactar la sección 4 (Causa raíz), identificar el conjunto de registros/configuraciones comparables (mismo módulo, mismo tipo de documento o concepto, misma familia de organización) y comparar explícitamente el campo/flag/comportamiento relevante contra ese conjunto — no alcanza con revisar solo el propio registro. Esto se hace siempre, no solo cuando ya se sospecha un problema de configuración: es un paso de verificación previo al cierre, no una reacción a una sospecha ya formada. El resultado (qué pares se revisaron, qué diferencias o coincidencias se encontraron) es evidencia obligatoria de la sección 5D.
 
 ---
 
@@ -249,6 +250,7 @@ Entregar **siempre** en este orden:
 
 ## 4) Causa raíz probable
 ...
+{Si la conclusión es "no hay error" / "comportamiento esperado": no cerrar solo con consistencia interna del propio registro — citar aquí el resultado concreto de la comparación contra pares del Paso 2, punto 7 (sección 5D) que la respalda.}
 
 ## 5) Plan de solución (consultor / soporte técnico)
 ### A. Corrección inmediata (paso a paso)
@@ -450,6 +452,7 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | Saltar **Qué se identificó** | Respuesta difusa | Una frase que una hecho + consecuencia |
 | Mezclar SQL/triggers en §7 | Audiencia incorrecta | Reservar detalle técnico para §5–6 |
 | §7 indica corregir un dato/documento sin nombrar la ventana donde se hace | El usuario u operador no sabe dónde ejecutar la acción | Resolver nombre y ruta exacta en 5C y citarla en §7; si no se confirma, declararlo en §9 |
+| Cerrar en "no hay error" / "comportamiento esperado" apoyado solo en consistencia con el propio historial del registro | Un registro puede comportarse igual que su historial y aun así estar mal configurado frente a sus pares | Comparar contra pares/registros similares (Paso 2, punto 7) antes de cerrar; declarar el resultado en 5D |
 
 ### Consultas de viabilidad (§7)
 
@@ -475,8 +478,10 @@ Toda revisión de módulo se hace sobre el **repo de código del cliente** — n
 1. **`graphify-out/`** — descargar y filtrar `manifest.json` por el nombre del módulo candidato (mapa 5B) para saber qué clases/archivos existen ahí; es barato y orienta la lectura de código. `graph.json` es un puntero Git LFS inaccesible en la práctica y `.graphify_analysis.json` no indexa `.xml`, así que para lógica PL/SQL (triggers y funciones) el grafo no alcanza — pasar directo al punto 2.
 2. **Código fuente del módulo** (`src-db/database/model/functions/*.xml`, `src-core`, clases Java) — leer directamente los triggers, funciones PL/SQL y procesos que apliquen al síntoma. Es el paso que resuelve la mayoría de causas raíz de datos/lógica, no el grafo.
 3. Anotar para sección **5D**: ventanas (`AD_MENU`/`AD_WINDOW`), procesos (`AD_PROCESS`), mensajes de error (literal del código o del trigger) y restricciones encontradas.
-4. **Verificar despliegue en repo**: confirmar si el módulo tiene carpeta `src-db/` con lógica real o si el flujo que se está evaluando no tiene contraparte en código. Un workaround **sin código que lo respalde** no debe ir a §7 como acción principal si existe una alternativa con código (ej. NC manual vs proceso **Generar NC** con `AD_PROCESS` real). Este mismo criterio aplica a **cualquier acción correctiva**, no solo botones: si existe una ventana o proceso estándar del sistema para corregir el dato/documento afectado (ej. un ajuste de inventario, una reversión de documento), priorizarla en §7 sobre una corrección vía SQL o backend — el script SQL, si aplica, queda como respaldo técnico en las secciones 5–6, nunca como la única vía ofrecida al usuario.
+4. **Verificar despliegue en repo**: confirmar si el módulo tiene carpeta `src-db/` con lógica real o si el flujo que se está evaluando no tiene contraparte en código. Un workaround **sin código que lo respalde** no debe ir a §7 como acción principal si existe una alternativa con código (ej. NC manual vs proceso **Generar NC** con `AD_PROCESS` real). Este mismo criterio aplica a **cualquier acción correctiva**, no solo botones: si existe una ventana o proceso estándar del sistema para corregir el dato/documento afectado (ej. un ajuste de inventario, una reversión de documento), priorizarla en §7 sobre una corrección vía SQL o backend — el script SQL, si aplica, queda como respaldo técnico en las secciones 5–6, nunca como la única vía ofrecida al usuario. **Cuando la corrección es cambiar un valor de configuración que vive en un campo de interfaz** (fórmula, parámetro, flag) y no un dato roto: no basta con describir la acción en términos genéricos ("agregar X", "activar el flag correspondiente") — consultar el valor actual por BD/código, construir el valor nuevo exacto siguiendo el patrón de los registros hermanos ya identificados en el punto 7 del Paso 2, y dejar ese valor exacto tanto en el script de respaldo (5-6) como, en lenguaje llano y sin nombres de campo técnicos, en §7.
 5. Si el repo de código no es accesible o no se pudo determinar dónde arranca el código del módulo, declararlo en sección 9 (no inventar ni suponer) y bajar confianza.
+6. **No fijar la causa raíz sobre un archivo de código (jrxml, función, trigger, clase Java) que no se haya confirmado como el componente que realmente interviene en el proceso reportado.** Cuando `graphify-out/` no resuelve el archivo por nombre, reconstruir la cadena completa antes de concluir: ventana/proceso/botón que dispara la acción → definición del reporte o proceso (`AD_Process`, `AD_ReportView`, o el proceso configurado en la ventana) → plantilla/consulta/función exacta → triggers o clases Java involucradas. Cada eslabón se confirma leyendo código o configuración real — nunca por similitud de nombre o de módulo. Si no se puede confirmar el siguiente eslabón con las fuentes disponibles, declarar en sección 9 que el componente no fue confirmado y dejar esa vía como hipótesis a verificar por un técnico, no como causa raíz cerrada.
+7. **Si existe un ticket o caso precedente similar (por síntoma o por módulo)**: tratarlo como una hipótesis más, nunca como conclusión automática. Antes de adoptarlo, identificar un dato concreto y verificable **de este caso** (no del precedente) que el mecanismo del precedente obligue a que sea cierto (ej. número de líneas de un documento, valor de un campo específico) y verificarlo contra la fuente correspondiente antes de redactar la sección 4. Si el dato contradice el precedente, o la evidencia propia de este caso sostiene una causa distinta, descartarlo explícitamente en las secciones 1 y 4 en vez de dejarlo implícito como la solución.
 
 ### 5B. Mapa dominio → módulos (punto de partida)
 
@@ -506,8 +511,10 @@ Incluir bullets del tipo:
 
 - Módulo `{M}` — `graphify-out/manifest.json`: [nº de entradas y archivos indexados del módulo]
 - Módulo `{M}` — código fuente: [archivo/función/trigger concreto abierto y qué confirma]
+- Módulo `{M}` — **componente confirmado como responsable del proceso/documento: Sí/No** — si No, declarar la hipótesis como pendiente de verificación técnica, no como causa raíz cerrada (ver Paso 5A, punto 6)
 - Módulo `{M}` — **`src-db` en repo: Sí/No** — si No, indicar módulo alternativo con código para la guía operativa
 - Módulo `{M}` — `AD_MENU`/`AD_FIELD` / proceso confirmado: [nombre UI es_ES] (solo si aplica a pasos de usuario)
+- **Comparación contra pares/registros similares** (Paso 2, punto 7): [qué registros/configuraciones comparables se revisaron y qué diferencias o coincidencias se encontraron, o el motivo por el que no existe un conjunto comparable] — obligatoria cuando la conclusión sea "no hay error" o "comportamiento esperado"
 
 Esta sección alimenta la **guía operativa** (`openbravo-operational-walkthrough`): incluir solo módulos/procesos con **código confirmado** o flujo core verificado.
 
@@ -579,3 +586,5 @@ La guía operativa **debe** volver a explorar directamente el repo del cliente (
 ## Uso desde `triage-glpi-auto` (ejecución automática)
 
 Cuando esta skill se invoca como motor de diagnóstico del Automation `triage-glpi-auto` (triage de GLPI), aplica una regla adicional de consistencia: si el módulo de profundización de causa raíz de ese orquestador (su Paso 5-B) encuentra un mecanismo o alcance más profundo que el identificado en una primera pasada, ese hallazgo se incorpora a **este mismo documento** (secciones 3, 4, 5 y 9) **antes** de redactar la sección 7 — nunca se genera una segunda sección 7 ni un comentario de corrección aparte para el mismo ticket. El documento y la sección 7 que produce esta skill son, por ticket y por corrida, únicos.
+
+**Esto no reemplaza las obligaciones propias de este motor** (Paso 2 punto 7, Paso 5A puntos 6 y 7): la comparación contra pares, el rastreo del componente exacto, y la validación de cualquier ticket/precedente relacionado se ejecutan siempre como parte de esta skill, sea invocada directamente o a través de `triage-glpi-auto` — no dependen de que el orquestador las repita o las detecte en una pasada separada. El Paso 5-B del orquestador es una capa adicional de consistencia sobre el resultado ya producido aquí, no la única fuente de esa disciplina.
