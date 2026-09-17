@@ -436,6 +436,7 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo — incluir si se detectó algún `null` anómalo en campo relacional (4-B) |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO / SIN CONFIG_DIR CONFIGURADO | archivo y contenido relevante, o que `config_dir` es `null` en `clientes.json` |
 | Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
+| Comparación contra pares/registros similares (Paso 5-B, punto 1) | COMPARADO / SIN PARES | qué registros/configuraciones comparables se revisaron y qué diferencias o coincidencias se encontraron, o el motivo por el que no existe un conjunto comparable |
 | Alcance real del patrón (Paso 5-B, punto 5) | MEDIDO / NO APLICA | número obtenido por la consulta de dimensionamiento y la consulta usada, o el motivo por el que no aplica (causa raíz sin flujo/módulo compartido con otros registros) |
 
 **`OMITIDO` vs `REPO_INACCESIBLE` vs `ESTRUCTURA_NO_DETECTADA` vs `COMPONENTE_NO_CONFIRMADO`**: no son intercambiables. `OMITIDO` es para un archivo puntual que legítimamente no existe en un repo válido y accesible. `REPO_INACCESIBLE` (Paso 2-B, punto 1) es para cuando el repo de código entero no respondió — problema de configuración en `clientes.json` (owner/repo o permisos). `ESTRUCTURA_NO_DETECTADA` (Paso 2-B, punto 2) es para cuando el repo sí es accesible pero la auto-detección de `base_path` dio cero o múltiples candidatas — no se pudo determinar dónde arranca el código, y hace falta cargar `base_path` a mano en `clientes.json`. `COMPONENTE_NO_CONFIRMADO` (punto 3-bis) es distinto de los tres anteriores: el repo es accesible y el archivo que se leyó existe, pero no se confirmó que sea el componente que realmente genera el proceso/documento del ticket — es una falla de identificación, no de acceso. Los cuatro apuntan a causas y soluciones distintas — no colapsarlos en uno solo.
@@ -463,6 +464,10 @@ Este paso **no reemplaza** el motor de 9 pasos ni cambia su estructura de salida
 
 #### 1. Principio — no cerrar en la primera causa plausible
 Encontrar una explicación que encaja con el síntoma no es lo mismo que haber encontrado la causa raíz. Antes de dar por cerrado el diagnóstico, preguntarse explícitamente: *¿qué otra cosa podría producir exactamente el mismo síntoma?* Si existe al menos una hipótesis alternativa razonable con los datos ya disponibles (código, BD, `graphify-out/`, `integraciones.json`), evaluarla antes de fijar la causa raíz — no después, no como nota al margen.
+
+**Este principio aplica también cuando la conclusión es "no hay error" o "es el comportamiento esperado/normal".** Existe para impedir un fallo concreto ya ocurrido: ante un bloqueo al registrar un pedido, el motor confirmó que el registro y su estado eran *internamente consistentes* (el mismo tipo de documento se comporta igual en otros pedidos del día) y cerró el caso como "malinterpretación del estado, no un error" — sin comparar esa configuración contra sus **pares** (los demás tipos de documento de la misma familia). Un análisis posterior, comparando ese tipo de documento contra todos sus hermanos, encontró que era el único con un flag de configuración distinto al resto — la causa real. Consistencia interna (esto siempre pasa así para este registro/tipo) no es lo mismo que corrección (este registro/tipo está configurado igual que sus pares) — la primera nunca es evidencia suficiente para la segunda.
+
+**Comparación obligatoria contra pares/registros similares — no condicionada a que ya se haya detectado un problema.** Antes de cerrar cualquier diagnóstico (incluida una conclusión de "no hay error"), identificar el conjunto de registros/configuraciones comparables al del ticket (mismo módulo, mismo tipo de documento o concepto, misma familia de organización/cliente) y comparar explícitamente el campo, flag o comportamiento relevante contra ese conjunto — no alcanza con revisar solo el propio registro o su historial. Esto se hace siempre, cubriendo tantos escenarios comparables como sea razonable con las fuentes disponibles en esta corrida, independientemente de si la comparación termina confirmando una anomalía o confirmando que todo está en línea — es un paso de verificación, no una reacción a una sospecha ya formada. El resultado (qué pares se revisaron, qué diferencias o coincidencias se encontraron) es evidencia obligatoria de la sección 9 (ver fila correspondiente en la tabla del punto 3) y su ausencia o profundidad debe reflejarse en la justificación del score de acertividad (Paso 6.1) — un diagnóstico que no comparó contra pares no puede justificar el mismo nivel de confianza que uno que sí lo hizo.
 
 #### 2. Trazabilidad de flujo obligatoria
 Reconstruir la cadena completa hasta el punto donde se origina el problema, no solo hasta donde se manifiesta:
@@ -709,7 +714,28 @@ Por eso, para **cada** `INSERT` de este flujo (`glpi_itilfollowups` y `sidesoft_
 
 Al inicio de cada corrida, no confiar en los ids de followup de un registro anterior de `sidesoft_triage_glpi_log`: releer siempre el historial real del ticket (Paso 4). Chequeo rápido: si un id registrado es mayor que el `MAX(id)` actual de la tabla, esa fila nunca existió.
 
-**Caracteres a evitar en cualquier string enviado por el MCP**: el punto y coma, tanto literal como dentro de entidades HTML (`&mdash;`, `&gt;`). Usar guiones y palabras. Las etiquetas `<br>` y `<b>` sí son seguras.
+**Caracteres a evitar en cualquier string enviado por el MCP**: el punto y coma, tanto literal como dentro de entidades HTML (`&mdash;`, `&gt;`). Usar guiones y palabras. Las etiquetas `<br>`, `<b>`, `<table>`, `<tr>`, `<td>` y `<th>` sí son seguras.
+
+### 6-A-bis — Formato de tablas comparativas dentro de los comentarios (mejora de diseño, no cambia el análisis)
+
+Esta sección solo mejora cómo se ve una comparación ya exigida por el análisis (Paso 5-B, puntos 1, 3 y 5) — no agrega ni quita ningún requisito de contenido.
+
+Cuando el comentario `[TRIAGE-ANALISIS-9PASOS]` (6.2) incluya una tabla de hipótesis y descarte, una comparación contra pares/registros similares, o una comparación de alcance, **renderizarla como una tabla HTML compacta** en vez de una línea corrida separada por `|`:
+
+```html
+<table><tr><th>Hipótesis</th><th>Evidencia</th><th>Resultado</th><th>Estado</th></tr>
+<tr><td>H1 ...</td><td>...</td><td>...</td><td>Confirmada</td></tr>
+<tr><td>H2 ...</td><td>...</td><td>...</td><td>Descartada</td></tr></table>
+```
+
+Mismo patrón para la comparación contra pares (Paso 5-B, punto 1) — ej. tipo de documento vs. flags de configuración — y para la tabla de alcance (Paso 5-B, punto 5): encabezados cortos, una fila por elemento comparado, celdas con el valor concreto (no la descripción larga de por qué importa; eso va en el texto alrededor de la tabla).
+
+Reglas para que la tabla no rompa el límite de tamaño (6-A):
+- Máximo 4-5 columnas, encabezados y celdas cortos (palabras o valores, no oraciones).
+- Sin etiquetas anidadas dentro de una celda salvo `<b>` puntual — nada de listas ni párrafos dentro de `<td>`.
+- Si la tabla completa no entra en el followup disponible (ver 6.2, división en Parte 1/Parte 2), priorizar las columnas que sustentan la conclusión (ej. Hipótesis/Resultado/Estado, o Tipo de documento/Campo comparado/Valor) y mover el detalle narrativo extendido a texto plano alrededor, en vez de omitir filas de la comparación.
+
+Este formato aplica a los comentarios técnicos (6.1, 6.2) — nunca a §7/6.3, que sigue sin SQL, columnas ni IDs técnicos (ver reglas de §7 en el Paso 5-B); si una comparación es relevante para el usuario final en términos de negocio, se resume ahí en lenguaje llano, sin nombres de campo ni una tabla técnica.
 
 ### 6-B — Si el análisis produjo un script SQL correctivo sobre el ERP del cliente
 Siguiendo la regla dura de `openbravo-triage-tecnico` para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
@@ -784,3 +810,5 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca fijar la causa raíz sobre un archivo de código (jrxml, función, trigger, clase Java) que no se haya confirmado, mediante el rastreo del Paso 5 punto 3-bis, como el componente real responsable del proceso/documento del ticket — un archivo "similar" o del mismo módulo no confirmado se registra como `COMPONENTE_NO_CONFIRMADO`, no como base de un diagnóstico cerrado.
 - Nunca describir en términos genéricos una solución que requiere cambiar un valor de configuración de interfaz (fórmula, parámetro, texto de validación) pudiendo consultarlo por BD — debe incluir el script de actualización sugerido (Paso 6-B) con el valor nuevo exacto, y §7 debe indicar ese mismo valor en lenguaje llano para quien vaya a aplicarlo desde la interfaz.
 - Nunca dar por resuelto un cambio de configuración replicado (ej. una fórmula que agrupa conceptos) revisando un solo campo/registro — identificar y listar todos los campos/registros hermanos que deben quedar consistentes (Paso 5-B, punto 5, caso particular de configuración) antes de cerrar la sección 5.
+- Nunca cerrar un diagnóstico —incluida la conclusión de que "no hay error" o "es el comportamiento esperado"— apoyándose solo en que el registro es consistente con su propio historial, sin haberlo comparado antes contra sus pares/registros similares (Paso 5-B, punto 1). Consistencia interna (esto siempre pasa así para este registro) no es evidencia de corrección frente a sus pares — esa comparación se hace siempre antes de cerrar, cubriendo tantos escenarios comparables como sea razonable, no solo cuando ya se sospecha un problema de configuración, y su resultado queda registrado en la sección 9 y refleja el score de acertividad (Paso 6.1).
+- Nunca presentar una tabla de hipótesis, comparación contra pares, o alcance (Paso 5-B, puntos 1/3/5) como texto corrido separado por `|` en los comentarios técnicos (6.1, 6.2) — usar la tabla HTML compacta del Paso 6-A-bis, dentro del límite de tamaño de cada followup.
