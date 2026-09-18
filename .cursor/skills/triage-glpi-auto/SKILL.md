@@ -12,7 +12,7 @@ Este Automation está vinculado a UN SOLO repo (el **orquestador**) — nunca a 
 
 MCP-DB (servidor `sidesoft-db`, https://mcp-db.sidesoftcorp.com) se usa para dos cosas distintas, ambas vía el mismo servidor pero con `database` (alias) diferente:
 - `database = "glpi"` → leer y escribir sobre la base de datos GLPI (compartida por todos los clientes, único alias con permiso de escritura de este flujo).
-- `database = {openbravo_db_alias del cliente}` → consultar, siempre de solo lectura (`pg_query`/`pg_describe_table`, nunca `pg_execute`), la base contable Openbravo del cliente resuelto en el Paso 2 (ver Paso 3-B).
+- `database = {openbravo_db_alias del cliente}` → consultar, siempre de solo lectura (`pg_query`/`pg_describe_table`, nunca `pg_execute`), la base Openbravo del cliente resuelto en el Paso 2 (proceso, datos y contabilidad — ver Paso 3-B).
 
 MCP de GitHub (`get_file_contents` o equivalente) se usa para leer archivos de los repos de cliente sin clonarlos.
 
@@ -51,7 +51,7 @@ Cada entrada resuelve tres cosas distintas, que **nunca se derivan unas de otras
 - **`base_path`** (opcional, string o `null`): la carpeta dentro de ese repo donde arranca el código, si no está en la raíz. Con Actuaria, todo el árbol de Openbravo está anidado bajo `actuaria/`, no en la raíz del repo. Si el repo trae el código directo en la raíz, dejarlo en `null` y el Paso 2-B lo detecta solo.
 - **`config_dir`** (opcional, string o `null`): ruta **dentro del propio repo orquestador**, relativa a su raíz, donde vive la configuración específica de ese cliente — `cliente.json` (reglas propias), `integraciones.json` (desarrollos externos, ver Paso 3-C), `customizaciones/*.md`. Es una subcarpeta de `registro_clientes/` (ej. `registro_clientes/actuaria/`), **no un repo aparte**: se lee local, igual que `clientes.json`, sin MCP de GitHub y sin el riesgo de un owner/repo mal cargado en un tercer repositorio. Si es `null`, el Paso 3 no busca esos archivos en ningún lado y lo registra como "sin `config_dir` configurado" — estado legítimo, no error.
 
-`openbravo_db_alias` identifica la BD de Openbravo (PostgreSQL) de ese cliente para verificaciones contables — es el valor de la columna "ALIAS MCP" del Panel MCP (https://mcp-db.sidesoftcorp.com/admin/databases), no un nombre inventado. El servidor MCP-DB ya está activo para todos los alias ahí listados; lo único pendiente por cliente es completar este campo en `clientes.json` con el alias exacto (ver Paso 3-B para cómo se usa). Mientras esté en `null`, el análisis procede solo con conocimiento estático, sin verificación en BD real.
+`openbravo_db_alias` identifica la BD de Openbravo (PostgreSQL) de ese cliente para verificaciones de proceso, datos y contabilidad — es el valor de la columna "ALIAS MCP" del Panel MCP (https://mcp-db.sidesoftcorp.com/admin/databases), no un nombre inventado. El servidor MCP-DB ya está activo para todos los alias ahí listados; lo único pendiente por cliente es completar este campo en `clientes.json` con el alias exacto (ver Paso 3-B para cómo se usa). Mientras esté en `null`, el análisis procede solo con conocimiento estático, sin verificación en BD real; si el ticket trae ancla clase A (error de proceso/BD), eso fuerza tope de score (Paso 6.1).
 
 Este registro es la única fuente de verdad de qué proyectos GLPI están habilitados y a qué repo, `base_path` y `config_dir` corresponde cada uno. Agregar un cliente nuevo = una entrada nueva aquí (y su carpeta `registro_clientes/<cliente>/` si aplica) — no requiere tocar esta skill.
 
@@ -216,19 +216,42 @@ Existe para impedir un fallo concreto ya ocurrido: un ticket reportaba que no ha
 
 ---
 
-## Paso 3-B — Verificación contable en BD de Openbravo (solo si aplica, y solo lectura)
+## Paso 3-B — Verificación en BD de Openbravo (proceso, datos y contabilidad; solo lectura)
 
-Si el ticket trata de un descuadre, asiento o cuenta contable (conciliación con diferencia, cuenta mal asignada, asiento incorrecto — el criterio auto-contenido en `openbravo-functional-ticket-analysis`, Paso 3), y el cliente tiene `openbravo_db_alias` distinto de `null` en el registro:
+Si el cliente tiene `openbravo_db_alias` distinto de `null` en el registro, y el ticket trae al menos un identificador usable (Paso 3-A o descripción), consultar la BD del cliente. **No limitar este paso a descuadres contables**: aplica siempre que haya documento/proceso con síntoma verificable en datos.
+
+**Disparadores (cualquiera basta):**
+- Descuadre, asiento o cuenta contable (criterio en `openbravo-functional-ticket-analysis`, Paso 3).
+- **Ancla clase A** del Paso 1.5 del motor: error SQL/constraint/`ERROR=` / fallo al Completar, Registrar, Procesar, Contabilizar o Generar.
+- Documento concreto con inconsistencia de montos, estados, líneas, plan de pagos, o campos `em_*` sospechosos.
+- Hipótesis de dato maestro/configuración que exige comparar valores vivos (Paso 5-B / motor Paso 2 punto 7).
 
 1. Usar la herramienta MCP-DB (servidor `sidesoft-db`, https://mcp-db.sidesoftcorp.com) para consultar la base del cliente. El parámetro `database` de estas herramientas debe recibir EXACTAMENTE el valor de `openbravo_db_alias` del cliente resuelto en el Paso 2 — es un alias lógico, no el host ni credenciales reales; ese mapeo lo resuelve el servidor MCP-DB, no esta skill.
 2. Antes de consultar tablas que no se conozcan de memoria, usar `pg_describe_table` (parámetros: `database` = alias del cliente, `table` = nombre de tabla) para confirmar el esquema real en vez de asumirlo.
-3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`Fact_Acct`, `C_Invoice`, `C_Payment`, etc.), siguiendo la disciplina SQL de `openbravo-functional-ticket-analysis` (Paso 3): solo lectura, `WHERE` preciso, `LIMIT` en tablas de alto volumen. **Si el Paso 3-A extrajo identificadores concretos, usarlos como filtro `WHERE`** (número de documento, tercero, fecha, monto) — eso convierte la verificación en una búsqueda dirigida en vez de una exploración genérica de la tabla.
+3. Usar `pg_query` (parámetros: `database` = alias del cliente, `query` = SQL) para todas las consultas — nunca `pg_execute` contra un alias de cliente (ver Regla dura abajo). Consultar con `SELECT` filtrado y `LIMIT` las tablas necesarias (`C_Order`, `C_Invoice`, `Fact_Acct`, `C_Payment`, tablas satélite `em_*`, etc.), siguiendo la disciplina SQL de `openbravo-functional-ticket-analysis`. **Si el Paso 3-A extrajo identificadores concretos, usarlos como filtro `WHERE`** — búsqueda dirigida, no exploración genérica.
+3-A. **Auditoría de fallo de proceso (obligatoria si ancla clase A)** — ejecutar **antes** de explicar estados generales, reglas de facturación/entrega o "comportamiento esperado":
+   1. Resolver `record_id` del documento (`c_order_id`, `c_invoice_id`, etc.) por `documentno` u otro ID del ticket.
+   2. Consultar:
+      ```sql
+      SELECT p.ad_pinstance_id, p.ad_process_id, pr.value AS process_value, pr.name AS process_name,
+             p.result, p.errormsg, p.created, p.ad_user_id
+      FROM ad_pinstance p
+      LEFT JOIN ad_process pr ON pr.ad_process_id = p.ad_process_id
+      WHERE p.record_id = '{record_id}'
+      ORDER BY p.created DESC
+      LIMIT 25;
+      ```
+   3. Si hay `result = 0` (o equivalente) y `errormsg` alineado al síntoma: la causa candidata es el **fallo de ese proceso**. Queda **prohibido** cerrar solo con "genere albarán / factura" o "Proformado es esperado" sin haber explicado y seguido ese `errormsg`.
+   4. Comparar el documento del caso contra 2–5 **hermanos exitosos** de la misma familia (mismo doctype/org/flujo): campos `em_*` que el proceso o sus EP tocan, filas hijas esperadas (líneas, schedules, tablas satélite), y maestros referenciados **en la misma combinación** que usa el documento (producto en tarifa activa, oferta con filas hijas, etc.).
+   5. Desambiguar homónimos del error (motor Paso 1.5 punto 2): p.ej. columna numérica `pricelist` ≠ `m_pricelist_id` (Tarifa).
 4. Usar el resultado real para confirmar o descartar la hipótesis de causa raíz antes de redactar el análisis del Paso 5.
-4-B. **Si alguna fila devuelta trae en `null` un campo que estructuralmente debería estar poblado** para que el documento/transacción opere con normalidad (ej. `c_bpartner_id` en `fin_payment_scheduledetail`, que vincula el pago con el tercero; comparar contra otras filas del mismo tipo que sí lo traen poblado), no tratar eso solo como dato de contexto de la respuesta funcional. Es evidencia de una posible **inconsistencia técnica en la fila**, y debe registrarse explícitamente como candidato de causa raíz — cruzarlo contra el vocabulario de causa raíz de `openbravo-functional-ticket-analysis` (sección 4: dato del cliente erróneo / bug real, no solo "restricción de negocio" o proceso del usuario) antes de descartarlo. Si corresponde una corrección a nivel de datos, aplicar el Paso 6-B (script de corrección sugerido, solo texto, para revisión de un técnico) — el diagnóstico no puede cerrarse únicamente con un rodeo funcional para el usuario final cuando la BD ya mostró el dato roto.
+4-B. **Si alguna fila devuelta trae en `null` un campo que estructuralmente debería estar poblado** para que el documento/transacción opere con normalidad (ej. `c_bpartner_id` en `fin_payment_scheduledetail`; o campos de extensión que un EP/proceso espera no-nulos — comparar contra otras filas del mismo tipo que sí los traen poblados), no tratar eso solo como dato de contexto. Es evidencia de una posible **inconsistencia técnica en la fila**, y debe registrarse explícitamente como candidato de causa raíz — cruzarlo contra el vocabulario de causa raíz de `openbravo-functional-ticket-analysis` antes de descartarlo. Si corresponde una corrección a nivel de datos, aplicar el Paso 6-B (script de corrección sugerido, solo texto) — el diagnóstico no puede cerrarse únicamente con un rodeo funcional para el usuario final cuando la BD ya mostró el dato roto.
 5. Si `pg_query` falla contra el alias configurado (conexión caída, alias inexistente), usar `pg_list_databases` para confirmar qué alias están disponibles en esta corrida, registrar la incidencia en el log, y continuar sin esta verificación.
-6. Si `openbravo_db_alias` es `null` (cliente sin base Openbravo asociada), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD contable no disponible para este cliente."*
+6. Si `openbravo_db_alias` es `null` (cliente sin base Openbravo asociada), continuar sin esta verificación y anotarlo explícitamente en el comentario privado: *"Diagnóstico basado solo en conocimiento estático — verificación en BD del ERP no disponible para este cliente."* Si además la ancla era clase A, la fila de evidencia de `ad_pinstance` queda `NO DISPONIBLE` y aplica el tope de score del Paso 6.1.
 
 **Regla dura**: esta consulta es SIEMPRE de solo lectura, siempre vía `pg_query`. `pg_execute` (lectura/escritura) está reservado exclusivamente para el alias interno `glpi`; nunca se usa contra el alias de un cliente. Ningún `INSERT`/`UPDATE`/`DELETE`/`DDL` se ejecuta contra la BD de Openbravo del cliente en modo automático — ver Paso 6-B para cómo se maneja una corrección sugerida.
+
+**Regla dura — prioridad del ancla:** si coexisten un error de proceso/BD (clase A) y un estado de negocio tipo Proformado / "falta albarán", **manda la clase A**. La comparación de doctype/hermanos maestros (Paso 5-B) sigue siendo obligatoria, pero **después** de la auditoría 3-A, y no puede usarse sola para cerrar como "no hay error" mientras `ad_pinstance` muestre fallos alineados al síntoma.
 
 ---
 
@@ -338,6 +361,8 @@ Aplicar el **Paso 0-A (5 mínimos funcionales)** de `openbravo-functional-ticket
 
 ## Paso 5 — Ejecutar el análisis funcional completo (motor: `openbravo-functional-ticket-analysis`)
 
+**Orden obligatorio con el motor:** aplicar primero el **Paso 1.5** (ancla A/B/C/D). Si es clase A, el resultado del Paso 3-B punto 3-A (`ad_pinstance`) es entrada obligatoria del diagnóstico — no opcional ni solo "si es contable".
+
 **Lectura de conocimiento:**
 
 1. Identifica el módulo/concepto probable con el mapa dominio→módulos de `openbravo-functional-ticket-analysis` (Paso 5B) y, si el proyecto lo tiene cargado, el índice de conocimiento estático por módulo (Paso 5B-bis de esa misma skill).
@@ -425,6 +450,8 @@ Toda fuente obligatoria aparece en esta tabla. Es el mecanismo de control: `LEÍ
 | Código fuente del módulo | LEÍDO / OMITIDO / REPO_INACCESIBLE / ESTRUCTURA_NO_DETECTADA / COMPONENTE_NO_CONFIRMADO | archivos y funciones concretas abiertas, o el resultado del Paso 2-B si el repo no respondió o no se pudo determinar el `base_path`, o la cadena de rastreo del punto 3-bis y en qué eslabón no se pudo confirmar el siguiente |
 | `Detalles Adicionales:` de imágenes (Paso 3-A) | LEÍDO / SIN IMÁGENES | identificador(es) extraído(s) usado(s) como filtro, o motivo de no viable |
 | BD del ERP (Paso 3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT, o el motivo — incluir si se detectó algún `null` anómalo en campo relacional (4-B) |
+| Auditoría de fallo de proceso / `ad_pinstance` (Paso 3-B, 3-A) | AUDITADO / NO APLICA / OMITIDO / NO DISPONIBLE | si ancla clase A: process_value, result, errormsg y created de los intentos fallidos (o el motivo de no poder auditar). `NO APLICA` solo si el ancla no es clase A. `OMITIDO` con ancla clase A **bloquea** score ≥ 90 y cierre "comportamiento esperado" |
+| Ancla del síntoma (motor Paso 1.5) | A / B / C / D | clase elegida + fragmento literal del error o síntoma usado como ancla |
 | Contexto del cliente (Paso 3) | LEÍDO / OMITIDO / SIN CONFIG_DIR CONFIGURADO | archivo y contenido relevante, o que `config_dir` es `null` en `clientes.json` |
 | Integraciones registradas del cliente (Paso 3-C) | LEÍDO / SIN REGISTRO | nombre de la integración que aplica al módulo/ventana afectada, o motivo de que no aplica ninguna |
 | Comparación contra pares/registros similares (Paso 5-B, punto 1) | COMPARADO / SIN PARES | qué registros/configuraciones comparables se revisaron y qué diferencias o coincidencias se encontraron, o el motivo por el que no existe un conjunto comparable |
@@ -457,6 +484,8 @@ Este paso **no reemplaza** el motor de 9 pasos ni cambia su estructura de salida
 Encontrar una explicación que encaja con el síntoma no es lo mismo que haber encontrado la causa raíz. Antes de dar por cerrado el diagnóstico, preguntarse explícitamente: *¿qué otra cosa podría producir exactamente el mismo síntoma?* Si existe al menos una hipótesis alternativa razonable con los datos ya disponibles (código, BD, `graphify-out/`, `integraciones.json`), evaluarla antes de fijar la causa raíz — no después, no como nota al margen.
 
 **Este principio aplica también cuando la conclusión es "no hay error" o "es el comportamiento esperado/normal".** Existe para impedir un fallo concreto ya ocurrido: ante un bloqueo al registrar un pedido, el motor confirmó que el registro y su estado eran *internamente consistentes* (el mismo tipo de documento se comporta igual en otros pedidos del día) y cerró el caso como "malinterpretación del estado, no un error" — sin comparar esa configuración contra sus **pares** (los demás tipos de documento de la misma familia). Un análisis posterior, comparando ese tipo de documento contra todos sus hermanos, encontró que era el único con un flag de configuración distinto al resto — la causa real. Consistencia interna (esto siempre pasa así para este registro/tipo) no es lo mismo que corrección (este registro/tipo está configurado igual que sus pares) — la primera nunca es evidencia suficiente para la segunda.
+
+**Prioridad sobre este principio — ancla clase A (`openbravo-functional-ticket-analysis` Paso 1.5):** si el ticket muestra un error literal de proceso/BD al Completar/Registrar/Procesar, **no** se puede cerrar como "comportamiento esperado" ni como guía de flujo posterior (Proformado → albarán → factura) solo con la comparación de doctype/hermanos maestros. Primero Paso 3-B punto 3-A (`ad_pinstance` + hermanos transaccionales exitosos + desambiguación de homónimos). La comparación de maestros sigue siendo obligatoria **después**, como verificación adicional, nunca como sustituto de la auditoría del proceso fallido.
 
 **Comparación obligatoria contra pares/registros similares — no condicionada a que ya se haya detectado un problema.** El procedimiento completo (cómo distinguir comparación transaccional vs. comparación contra registros maestros hermanos, enumeración exhaustiva de columnas `EM_*` por código + esquema vivo, y la regla de "no detenerse en el primer campo coherente") **vive en `openbravo-functional-ticket-analysis`, Paso 2 punto 7 y punto 7-bis** — no se repite aquí para evitar que ambas copias diverjan con el tiempo. Este motor siempre corre con `pg_query`/MCP-DB disponible dentro de `triage-glpi-auto`, así que esa comparación nunca es opcional en este flujo automático.
 
@@ -532,7 +561,7 @@ Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, 
 - La descripción original del ticket,
 - Si se venía del camino 4.2, también la respuesta de aclaración del cliente,
 - El contexto específico del cliente leído en el Paso 3,
-- El resultado de la verificación en BD contable del Paso 3-B, si aplicó.
+- El resultado de la verificación en BD del Paso 3-B, si aplicó — **incluyendo** la auditoría `ad_pinstance` (3-A) cuando el ancla fue clase A.
 
 **Campos nativos del motor — 2 campos distintos, no se fusionan:**
 - **Tipo de caso** (clasificación nativa del motor, Paso 3 de `openbravo-functional-ticket-analysis`): Operativo / Configuración / Integración / Bug / Infraestructura. Este es el campo principal que determina el manejo general del ticket.
@@ -578,6 +607,8 @@ Evaluar el score exclusivamente sobre la sección §7 del análisis del Paso 5. 
 | 0–39 | Datos insuficientes pese a pasar el filtro de contexto, múltiples hipótesis sin evidencia, o Datos faltantes con elementos críticos pendientes. |
 
 **Excepción — casos de capacitación no formalizados**: si §7 concluye que la solución real es que el usuario reciba capacitación o coordinación (y el ticket no disparó el Caso Capacitación del Paso 4.0 por no contener las palabras clave), aplicar como máximo **49** — depende de gestión coordinada con el cliente, no de una corrección de sistema.
+
+**Excepción — ancla clase A sin auditoría de proceso (o con auditoría que contradice el cierre):** si el ticket trae error SQL/constraint/`ERROR=` / fallo al Completar-Registrar-Procesar (motor Paso 1.5 clase A) y en la tabla de evidencia la fila `ad_pinstance` está `OMITIDO` o `NO DISPONIBLE`, **o** está `AUDITADO` con `result=0` alineado al síntoma pero §7 cierra solo como "comportamiento esperado" / flujo posterior (Proformado, generar albarán, etc.) sin explicar ese fallo: aplicar como máximo **70**. Queda **prohibido** score ≥ 90 (autoservicio / Resuelto automático) en esos casos. Si la auditoría sí se hizo y la causa raíz explica el `errormsg` con evidencia, el score sigue la tabla normal.
 
 **Nota de calibración**: la evidencia (Paso 5-EVIDENCIA) sigue siendo obligatoria y sigue registrándose en la sección 9, pero ya no determina el rango por sí sola — determina si la clasificación del tipo de intervención (autoservicio / manual-técnica-puntual / desarrollo pendiente) es confiable. Un diagnóstico con evidencia débil no debe declararse "autoservicio" (90-100) ni "cierra el caso hoy" (80-89) solo porque suena plausible: si no hay evidencia firme de en cuál de los tres tipos cae, el score baja al rango 40-70 en vez de forzarlo hacia arriba.
 
@@ -820,6 +851,9 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Al cargar o corregir una entrada de `clientes.json`, el `owner` tiene que copiarse literal de la URL real del repo en GitHub (`github.com/{owner}/{repo}`), nunca inventarse o abreviarse — un owner mal cargado produce `REPO_INACCESIBLE` indistinguible de un problema de permisos.
 - Nunca buscar `cliente.json`, `integraciones.json` o `customizaciones/*.md` en el repo de código del cliente — viven en el repo orquestador, bajo `config_dir` (Paso 3). Si `config_dir` es `null`, no intentar leerlos en ningún lado; registrar "sin `config_dir` configurado", no `OMITIDO`.
 - Nunca cerrar el diagnóstico solo con una explicación funcional/de proceso cuando la BD del ERP (Paso 3-B) mostró un valor `null` anómalo en un campo relacional que debería estar poblado — eso es candidato de causa raíz técnica (4-B) y, si aplica corrección de datos, debe acompañarse del script sugerido del Paso 6-B, no reemplazarlo por un rodeo funcional para el usuario final.
+- Nunca cerrar como "comportamiento esperado", "el documento ya está registrado" o "genere albarán/factura" cuando el ancla del ticket es un fallo de proceso/BD (motor Paso 1.5 clase A) sin haber corrido la auditoría de `ad_pinstance` (Paso 3-B, 3-A) o cuando esa auditoría muestra `result=0` alineado al síntoma y §7 no lo explica — en esos casos el score máximo es 70 (Paso 6.1).
+- Nunca equivaler un label de UI ("Tarifa", "Completar") con la columna o proceso del error SQL sin desambiguar homónimos (motor Paso 1.5 punto 2) y verificar ambos en BD.
+- Nunca limitar el Paso 3-B a tickets contables: con documento identificable y síntoma de proceso/datos, la verificación en BD (incluida `ad_pinstance` si aplica) es obligatoria.
 - Nunca declarar una fuente como revisada sin un dato probatorio obtenido en esta corrida. Sin dato, la fuente va como `OMITIDO` en el registro de evidencia de la sección 9.
 - Nunca cerrar una causa raíz de origen técnico o de datos como caso aislado sin haber corrido la consulta de alcance real del Paso 5-B (punto 5) cuando exista un flujo o módulo compartido que pueda repetir la misma condición en otros registros del cliente.
 - Nunca fijar la causa raíz de un ticket habiendo evaluado una sola hipótesis, si con los datos ya leídos en esta corrida existía al menos una hipótesis alternativa razonable — esa evaluación de descarte (Paso 5-B, punto 3) queda registrada en la sección 9, no solo en el razonamiento interno.
