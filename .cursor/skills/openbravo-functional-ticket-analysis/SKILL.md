@@ -393,6 +393,7 @@ Incluir **todos** los registros hermanos de la familia/dominio que se hayan cons
 
 ## 5) Plan de solución (consultor / soporte técnico)
 ### A. Corrección inmediata (paso a paso)
+{Si la corrección implica cambio de datos en BD: incluir aquí o en §6 el **script SQL sugerido** (solo texto, nunca ejecutado), con SELECT de localización + UPDATE/INSERT acotado. Si faltan IDs porque la BD no estuvo disponible, publicar plantilla con placeholders y condición de ejecución. No basta con "corregir el dato".}
 ### B. Workaround vs. solución definitiva (si aplica)
 Si existe una forma de mitigar el síntoma mientras se corrige la causa raíz de fondo, declarar ambas por separado y etiquetadas explícitamente — nunca presentar una como si fuera la otra: **Solución temporal/workaround** (qué hacer ya para reducir el impacto inmediato) y **Solución definitiva** (qué corrige la causa raíz/estructural de la sección 4). Si no hay distinción entre ambas (la corrección inmediata ya cierra el caso de fondo), omitir esta subsección.
 ### C. Validaciones previas (checklist)
@@ -401,9 +402,11 @@ Si existe una forma de mitigar el síntoma mientras se corrige la causa raíz de
 ## 6) Escalamiento (si aplica)
 ...
 {Antes de recomendar aquí el cambio de un campo/parámetro como solución de fondo: confirmar que el nombre exacto de columna propuesto para cambiar es **el mismo** que quedó "Confirmada" en la tabla de hipótesis del punto 4 — no un campo de nombre o dominio parecido (distintos módulos de personalización pueden definir su propio campo con semántica similar, ej. varias columnas "InvoiceRule" de distintos prefijos `EM_*` sobre la misma tabla, cada una gobernando un comportamiento distinto salvo que el código confirme lo contrario). Si el campo propuesto no es el mismo que la causa raíz confirmada, declararlo explícitamente y no ofrecerlo como solución de fondo. **Pero si ese campo quedó marcado Complementaria en la tabla de hipótesis (vía alternativa viable para el mismo síntoma), es obligatorio incluirlo en §7 como una opción numerada aparte** — nunca omitirlo solo porque no es la causa raíz principal. **Lo mismo aplica a los campos marcados Informativa: van a §7 como punto adicional a validar (aclarando que no corrigen este caso puntual), aunque no se ofrezcan como solución.** El usuario puede preferir la vía alternativa (ej. activar auto-generación) sobre la corrección de la causa raíz confirmada (ej. cambiar una regla de facturación), y no tiene forma de elegir si el análisis solo le muestra una opción.}
+{Script correctivo de BD, si aplica, también puede vivir aquí — ver triage-glpi-auto Paso 6-B.}
 
 ## 7) Respuesta sugerida al usuario final (copiable)
 {Plantilla incidencia o viabilidad según subtipo}
+{**Obligatoria siempre** en el documento de 9 pasos — también cuando el orquestador `triage-glpi-auto` no publique canal aparte de respuesta/solución por score bajo. Si el usuario puede resolver por interfaz: indicar ventana/ruta exacta y pasos. SQL e IDs técnicos van solo en §5/§6, nunca aquí.}
 
 ## 8) Prevención
 ...
