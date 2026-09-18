@@ -298,8 +298,10 @@ Los cuatro niveles son obligatorios siempre que la evidencia alcance para distin
 
 | Hipótesis | Campo evaluado (nombre exacto de columna) | Evidencia (valor caso vs. pares) | Resultado | Estado |
 |---|---|---|---|---|
-| {ej. Doctype anómalo — campo A} | `nombre_columna_1` | ... | Coincide / No coincide | Confirmada / Descartada |
-| {ej. Doctype anómalo — campo B} | `nombre_columna_2` | ... | Coincide / No coincide | Confirmada / Descartada |
+| {ej. Doctype anómalo — campo A} | `nombre_columna_1` | ... | Coincide / No coincide | Confirmada / Descartada / Complementaria |
+| {ej. Doctype anómalo — campo B} | `nombre_columna_2` | ... | Coincide / No coincide | Confirmada / Descartada / Complementaria |
+
+**Estado "Complementaria":** se usa cuando un campo no es la causa raíz confirmada del síntoma reportado, pero representa una **vía de solución alternativa** que resolvería o evitaría el mismo síntoma por un mecanismo distinto (ej. la causa raíz confirmada es una regla de facturación mal configurada, pero activar un flag de completar automático en el mismo tipo de documento también resolvería el caso, por una vía distinta). Toda fila marcada Complementaria debe traer en la columna Evidencia/Resultado una explicación **en lenguaje llano de qué hace ese campo cuando está activo** (no solo el valor técnico) — ej. "cuando está en 'Y', el sistema genera automáticamente el albarán y la factura al completar el pedido" — para que la sección 5 y la §7 puedan convertirla en una opción entendible, no solo un nombre de columna.
 
 Regla de esta tabla: **una fila por cada columna `EM_*` distinta identificada en el Paso 2, punto 7-bis** — nunca se colapsan dos o más columnas bajo una sola fila de hipótesis genérica (ej. "Doctype anómalo") con un solo resultado. Una hipótesis general de tipo "registro maestro anómalo" solo puede marcarse **Descartada** cuando **todas** las filas de columnas candidatas fueron probadas individualmente y ninguna mostró desviación frente a sus hermanos; si al menos una columna sí muestra desviación, la hipótesis general se marca **Confirmada** aunque otras columnas evaluadas hayan salido alineadas — el resultado de un campo no invalida ni reemplaza el de otro.
 
@@ -327,7 +329,7 @@ Si existe una forma de mitigar el síntoma mientras se corrige la causa raíz de
 
 ## 6) Escalamiento (si aplica)
 ...
-{Antes de recomendar aquí el cambio de un campo/parámetro como solución de fondo: confirmar que el nombre exacto de columna propuesto para cambiar es **el mismo** que quedó "Confirmada" en la tabla de hipótesis del punto 4 — no un campo de nombre o dominio parecido (distintos módulos de personalización pueden definir su propio campo con semántica similar, ej. varias columnas "InvoiceRule" de distintos prefijos `EM_*` sobre la misma tabla, cada una gobernando un comportamiento distinto salvo que el código confirme lo contrario). Si el campo propuesto no es el mismo que la causa raíz confirmada, declararlo explícitamente y no ofrecerlo como solución de fondo — como máximo, como ajuste de negocio adicional e independiente.}
+{Antes de recomendar aquí el cambio de un campo/parámetro como solución de fondo: confirmar que el nombre exacto de columna propuesto para cambiar es **el mismo** que quedó "Confirmada" en la tabla de hipótesis del punto 4 — no un campo de nombre o dominio parecido (distintos módulos de personalización pueden definir su propio campo con semántica similar, ej. varias columnas "InvoiceRule" de distintos prefijos `EM_*` sobre la misma tabla, cada una gobernando un comportamiento distinto salvo que el código confirme lo contrario). Si el campo propuesto no es el mismo que la causa raíz confirmada, declararlo explícitamente y no ofrecerlo como solución de fondo. **Pero si ese campo quedó marcado Complementaria en la tabla de hipótesis (vía alternativa viable para el mismo síntoma), es obligatorio incluirlo en §7 como una opción numerada aparte** — nunca omitirlo solo porque no es la causa raíz principal. El usuario puede preferir la vía alternativa (ej. activar auto-generación) sobre la corrección de la causa raíz confirmada (ej. cambiar una regla de facturación), y no tiene forma de elegir si el análisis solo le muestra una opción.}
 
 ## 7) Respuesta sugerida al usuario final (copiable)
 {Plantilla incidencia o viabilidad según subtipo}
@@ -413,6 +415,9 @@ Paso 1 — [...]
 Paso 2 — [...]
 Paso 3 — [...]
 
+**Otras opciones a considerar** [incluir solo si la tabla de hipótesis (sección 4) tiene una o más filas marcadas Complementaria; omitir todo el bloque si no hay ninguna]
+[Por cada hipótesis Complementaria: una opción numerada, en el mismo lenguaje llano, explicando qué configuración activa/cambia y qué efecto tiene — nunca el nombre técnico de la columna. Ej.: "2. Si prefieren que el sistema genere el albarán y la factura automáticamente al completar el pedido, sin depender de la regla de facturación, el ajuste se hace en el Tipo de documento 001-C9-MAYOREO-Matriz, activando la opción de completar automático (hoy está desactivada, a diferencia de la mayoría de tipos de documento de mayoreo)."] Si hay más de una opción complementaria, numerarlas todas — no elegir una y omitir las demás.
+
 **Importante**
 - [Qué no hacer — ej. no forzar conciliación parcial cuando el importe aparece duplicado.]
 ```
@@ -428,6 +433,7 @@ Paso 3 — [...]
 | Cuando la causa sea una regla de negocio/configuración (aun si el veredicto es "comportamiento esperado"), decir **dónde se configura** esa regla (5C, punto 5) | Nombrar la regla ("la facturación es Después de entregado") sin decir dónde se define ni cómo cambiarla si el negocio lo requiere |
 | Toda afirmación de tipo **"alineado con [otro documento/registro]"** o **"es el comportamiento esperado"** en §7 debe corresponder a una hipótesis marcada **Descartada** en la tabla del punto 4 con **todas** sus columnas `EM_*` candidatas probadas (Paso 2, punto 7-bis) | Escribir "alineado con X" en §7 respaldado en la comparación de una sola columna, cuando la tabla de hipótesis del punto 4 aún tiene otras columnas candidatas sin marcar o sin probar |
 | Cerrar con **Importante** breve | Escalar a soporte como única salida |
+| Incluir **Otras opciones a considerar** cuando exista una hipótesis Complementaria (sección 4) — en lenguaje llano, describiendo el efecto de activarla | Omitir una vía de solución alternativa ya identificada solo porque no es la causa raíz confirmada, o mencionarla solo con el nombre técnico de la columna sin explicar qué hace |
 
 **Ejemplo de tono (conciliación — devolución de anticipo mal registrada):**
 
@@ -527,6 +533,7 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | Cerrar en "no hay error" / "comportamiento esperado" apoyado solo en que otras transacciones del mismo tipo/configuración se comportan igual | Esas transacciones comparten la misma configuración por definición — su consistencia entre sí no prueba que la configuración esté bien | Identificar el registro maestro/de configuración que controla el comportamiento y compararlo contra sus hermanos de la misma familia (Paso 2, punto 7); declarar el resultado en 5D |
 | Descartar la hipótesis de "registro maestro anómalo" tras comparar un solo campo `EM_*` que resultó alineado con los hermanos, sin enumerar antes (vía introspección de esquema, Paso 2 punto 7-bis) si existen otras columnas `EM_*` candidatas en la misma tabla | Distintos módulos de personalización agregan columnas independientes sobre la misma tabla maestra (ej. varias variantes de "regla de facturación"); una puede estar alineada mientras otra —la que realmente explica el síntoma— está desviada, y graphify puede no indexarlas todas | Ejecutar la introspección de esquema (información viva de la BD) para listar TODAS las columnas `EM_*` de la tabla antes de comparar; registrar una fila de hipótesis por columna (Paso 4); solo descartar la hipótesis general si ninguna columna enumerada mostró desviación |
 | Recomendar cambiar un campo de configuración distinto al confirmado como causa raíz, solo porque tiene un nombre o propósito parecido (ej. "regla de facturación" del core vs. de otro módulo) | La solución no corrige el mecanismo real; dos campos con nombre similar pueden ser independientes y gobernar comportamientos distintos | Confirmar que el campo propuesto en la sección 6 es el mismo, por nombre exacto de columna, que quedó "Confirmada" en la tabla de hipótesis del punto 4 |
+| Marcar un campo como "Complementaria" en la tabla de hipótesis (sección 4) y no mencionarlo en §7 | El usuario se queda sin saber que existe una configuración alternativa que también resolvería su caso — puede rechazar la solución principal sin que se le ofrezca la otra vía | Toda fila Complementaria pasa a §7 como una opción numerada en "Otras opciones a considerar", en lenguaje llano y con el efecto funcional de activarla, no solo el nombre de la columna |
 
 ### Consultas de viabilidad (§7)
 
