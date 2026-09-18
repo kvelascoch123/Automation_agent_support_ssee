@@ -622,13 +622,26 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_sla_y_score_html}',
 ### 6.2 — Comentario privado: detalle completo de los 9 pasos
 Contenido: el documento completo generado en el Paso 5, en HTML legible. Audiencia: consultor/soporte técnico — puede incluir SQL, IDs, nombres de módulo. Si el `adjuntos` recibido en el payload no es `sin adjuntos`, agregar al final una nota: "Ticket con adjuntos no analizados automáticamente: {lista de nombres} — revisar manualmente en GLPI."
 
-**Control de calidad antes de publicar (obligatorio):** verificar que el documento tenga las 9 secciones completas, con contenido coherente y sin puntos a medio redactar o inconsistentes entre sí (ej. una sección de Causa raíz que no cierra con lo dicho en Diagnóstico técnico). Si no pasa este control, **regenerar el análisis una vez** antes de publicar nada. Nunca publicar una primera versión parcial/confusa y luego, en la misma corrida, publicar una segunda versión corregida como si fuera un comentario aparte — se publica una sola vez, cuando el documento ya pasó este control.
+**Control de calidad antes de publicar (obligatorio):** verificar que el documento tenga las **9 secciones completas** (1 Clasificación, 2 Entendimiento, 3 Diagnóstico técnico, 4 Causa raíz, 5 Plan de solución, 6 Escalamiento/script, **7 Respuesta sugerida al usuario final**, 8 Prevención, 9 Datos faltantes/Evidencia), con contenido coherente y sin puntos a medio redactar o inconsistentes entre sí. **La §7 nunca se omite del análisis de 9 pasos**, aunque el score sea bajo y no se publique después `[TRIAGE-RESPUESTA-SUGERIDA]` ni solución — ver regla dura abajo. Si no pasa este control, **regenerar el análisis una vez** antes de publicar nada. Nunca publicar una primera versión parcial/confusa y luego, en la misma corrida, publicar una segunda versión corregida como si fuera un comentario aparte — se publica una sola vez, cuando el documento ya pasó este control.
 
-**Obligatorio: dividir este comentario en dos followups.** El documento completo de 9 secciones supera el límite de escritura del MCP (ver *Límite de tamaño* abajo) y se pierde entero si se inserta como un solo bloque. Publicar:
+**Obligatorio: dividir este comentario en dos (o tres) followups.** El documento completo de 9 secciones supera el límite de escritura del MCP (ver *Límite de tamaño* abajo) y se pierde entero si se inserta como un solo bloque. Publicar:
 - `[TRIAGE-ANALISIS-9PASOS] Parte 1 de 2` — secciones 1 a 3 (Clasificación, Entendimiento, Diagnóstico técnico).
-- `[TRIAGE-ANALISIS-9PASOS] Parte 2 de 2` — secciones 4 a 6 y 8 a 9, más la nota de adjuntos.
+- `[TRIAGE-ANALISIS-9PASOS] Parte 2 de 2` — secciones **4 a 9** (Causa raíz, Plan, Escalamiento/script, **§7 Respuesta al usuario**, Prevención, Evidencia), más la nota de adjuntos.
 
-En el log del Paso 7, `followup_analisis_id` lleva el id de la Parte 1, y ambos ids se detallan en `respuesta_modelo_raw`.
+Si la Parte 2 supera ~3,2 KB con las secciones 4–9 incluidas, dividir en tres followups (nunca sacrificando la §7):
+- Parte 1 de 3 — secciones 1 a 3
+- Parte 2 de 3 — secciones 4 a 6 (incluye el script correctivo si aplica)
+- Parte 3 de 3 — secciones **7**, 8 y 9
+
+**Regla dura — §7 vs triage de respuesta/solución (no confundir):**
+- La **§7 vive siempre dentro de `[TRIAGE-ANALISIS-9PASOS]`** (Parte 2 o Parte 3). Score bajo **no** autoriza saltarse el punto 7 del análisis.
+- Lo único que se salta con score bajo es **republicar ese mismo contenido** como comentario aparte `[TRIAGE-RESPUESTA-SUGERIDA]` o como solución en `glpi_itilsolutions` (Paso 6.3). Es decir: el análisis siempre trae las 9 secciones; el triage de respuesta/solución es un canal adicional condicionado al score.
+
+**Regla dura — corrección de datos o acción por interfaz (siempre en el análisis):**
+- Si el caso requiere un **cambio a nivel de base de datos** (dato roto, PSD, flag, fórmula, reasignación, etc.): el **script SQL correctivo sugerido** (solo texto, nunca ejecutado) debe ir en las secciones **5 y/o 6** del `[TRIAGE-ANALISIS-9PASOS]`, con el encabezado del Paso 6-B. No basta con decir "hay que corregir el dato" sin adjuntar el script plantilla (aunque falten IDs por BD cerrada: dejar el `SELECT` de localización + el `UPDATE`/`INSERT` con placeholders y la condición de ejecución).
+- Si el usuario **puede resolverlo por la interfaz** del ERP: la **§7** (y, cuando el score lo permita, el triage de respuesta/solución 6.3) debe indicar la **ventana/ruta exacta** y los pasos operativos. Si además existe un script de respaldo técnico, el script queda en §5/§6 y la vía UI es la principal en §7.
+
+En el log del Paso 7, `followup_analisis_id` lleva el id de la Parte 1, y todos los ids de partes se detallan en `respuesta_modelo_raw`.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_html}', 1, 0, NOW(), NOW(), 1);
@@ -636,7 +649,7 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_ht
 
 ### 6.3 — Comentario condicional según score de acertividad
 
-Evaluar el score de acertividad (calculado en 6.1, sobre la §7 del análisis del Paso 5) para decidir qué publicar:
+Evaluar el score de acertividad (calculado en 6.1, sobre la §7 del análisis del Paso 5) para decidir **si se publica un canal adicional** de respuesta/solución. La §7 **ya debe estar** dentro del `[TRIAGE-ANALISIS-9PASOS]` del Paso 6.2 — este paso solo decide si se **copia** ese contenido (o un extracto operativo) a solución/respuesta sugerida.
 
 - **Score >= 90**: el contenido `[TRIAGE-RESPUESTA-SUGERIDA]` se aplica como **solución del ticket** (tabla `glpi_itilsolutions`), no como followup. El cambio de `status` a Resuelto y la asignación a kvelasco se aplican en el Paso 6.4, Caso A.
 ```sql
@@ -645,19 +658,19 @@ VALUES ('Ticket', {ticket_id}, 0, '{comentario_publico_respuesta_formateada}', N
 ```
 **Nota:** verificar contra el esquema real de GLPI (`pg_describe_table`/equivalente) los nombres de columna de `glpi_itilsolutions` antes de usar esta skill en producción — igual que `{ID_KVELASCO}`, no confirmado en esta corrección.
 
-- **Score > 80 y < 90**: publicar el mismo contenido como followup privado (`is_private = 1`). Además, el cambio de `status` a Planificado y la asignación a kvelasco se aplican en el Paso 6.4, Caso A-1.
+- **Score > 80 y < 90**: publicar el mismo contenido como followup privado (`is_private = 1`) con marcador `[TRIAGE-RESPUESTA-SUGERIDA]`. Además, el cambio de `status` a Planificado y la asignación a kvelasco se aplican en el Paso 6.4, Caso A-1.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
 
-- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`). El `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1 — un análisis ya publicado nunca deja el ticket en Nuevo.
+- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`) con marcador `[TRIAGE-RESPUESTA-SUGERIDA]`. El `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1 — un análisis ya publicado nunca deja el ticket en Nuevo.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
 
-- **Score <= 70**: no publicar este comentario. Esto **no** implica dejar el ticket sin gestionar: el `[TRIAGE-SLA-SCORE]` y el `[TRIAGE-ANALISIS-9PASOS]` ya se publicaron, así que el `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1, para que un técnico tome el caso y el ticket no vuelva a la cola de Nuevos.
+- **Score <= 70**: **no** publicar `[TRIAGE-RESPUESTA-SUGERIDA]` ni solución en `glpi_itilsolutions`. **Sí** debe haberse publicado la §7 completa dentro de `[TRIAGE-ANALISIS-9PASOS]` (6.2). Esto no implica dejar el ticket sin gestionar: el `[TRIAGE-SLA-SCORE]` y el análisis de 9 pasos (con §7 incluida) ya se publicaron, así que el `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1, para que un técnico tome el caso y el ticket no vuelva a la cola de Nuevos.
 
 ### 6.4 — Actualizar el estado del ticket (excepciones puntuales a "nunca modificar status")
 
@@ -792,12 +805,16 @@ Reglas para que la tabla no rompa el límite de tamaño (6-A):
 Este formato aplica a los comentarios técnicos (6.1, 6.2) — nunca a §7/6.3, que sigue sin SQL, columnas ni IDs técnicos (ver reglas de §7 en el Paso 5-B); si una comparación es relevante para el usuario final en términos de negocio, se resume ahí en lenguaje llano, sin nombres de campo ni una tabla técnica.
 
 ### 6-B — Si el análisis produjo un script SQL correctivo sobre el ERP del cliente
-Siguiendo la disciplina SQL de `openbravo-functional-ticket-analysis` (Paso 3) para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos), nunca como acción ejecutada. Encabezar ese bloque con:
+Siguiendo la disciplina SQL de `openbravo-functional-ticket-analysis` (Paso 3) para modo automático: cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sugerido contra tablas del ERP del cliente (`Fact_Acct`, `C_Invoice`, etc.) va **como texto dentro del comentario privado del Paso 6.2** (detalle de los 9 pasos, secciones 5 y/o 6), nunca como acción ejecutada. Encabezar ese bloque con:
 
 ```
 ⚠️ Script sugerido — requiere revisión y ejecución manual de un técnico.
 No fue ejecutado automáticamente.
 ```
+
+**Obligatorio cuando hay cambio de dato:** si la solución (o una hipótesis que, de confirmarse, exige corrección) implica modificar filas en BD, el análisis de 9 pasos **debe adjuntar el script** (o plantilla con `SELECT` de localización + sentencia de escritura acotada). No se acepta cerrar el plan solo con "un técnico debe corregir el PSD/campo X" sin el SQL sugerido. Si la BD del cliente no estuvo disponible en la corrida, igual se publica la plantilla con placeholders y la condición "ejecutar solo tras confirmar el SELECT".
+
+**Si el cambio lo puede hacer el usuario por interfaz:** no sustituir el script por la UI cuando el dato esté roto a nivel técnico (ej. PSD con BP null no editable en pantalla). En cambio, si la vía correcta es operativa/configuración editable: priorizar esa vía en la **§7** (ventana + pasos) y, si aplica, dejar el script solo como respaldo en §5/§6.
 
 Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GLPI (`glpi_itilfollowups`, `sidesoft_triage_glpi_log`) — nunca sobre la base de datos de producción del ERP del cliente.
 
@@ -835,6 +852,8 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
 - Nunca aplicar el comentario `[TRIAGE-RESPUESTA-SUGERIDA]` como solución del ticket (6.3) si el score de acertividad es menor a 90. Nunca publicar el comentario de respuesta como followup (6.3) si el score es 70 o menor.
+- Nunca omitir la **sección 7** del `[TRIAGE-ANALISIS-9PASOS]` porque el score sea bajo o porque no se vaya a publicar triage de respuesta/solución — el score solo condiciona el canal 6.3, no la completitud del análisis.
+- Nunca cerrar un plan que exija cambio de datos en el ERP sin **adjuntar el script SQL sugerido** (o plantilla con placeholders) en las secciones 5/6 del análisis. Si el usuario puede hacerlo por interfaz, la §7 (y el triage de respuesta/solución cuando aplique) debe indicar ventana y pasos — no solo "corregir en el sistema".
 - Todos los comentarios publicados por este flujo son privados (`is_private = 1`), con una única excepción: el comentario CX del Caso Capacitación (Paso 4.0), que se publica público (`is_private = 0`) porque va dirigido al solicitante. Fuera de ese caso, ninguno llega al solicitante dentro de GLPI.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
@@ -861,7 +880,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca sugerir un único script correctivo masivo cuando la consulta de alcance del Paso 5-B muestre un volumen alto de registros afectados — la corrección se separa en Fase 1 (puntual, lista para ejecutar) y Fase 2 (masiva, por lotes, no lista para correr sin revisión), según el Paso 5-B punto 7 y el Paso 6-B.
 - Nunca publicar un segundo `[TRIAGE-SLA-SCORE]`, un segundo `[TRIAGE-ANALISIS-9PASOS]` o un segundo `[TRIAGE-RESPUESTA-SUGERIDA]` para el mismo ticket en la misma corrida o en corridas concurrentes sin una respuesta nueva del solicitante entre ambos — eso lo controla el Paso 4.-1. Si ya existe uno reciente sin respuesta nueva del cliente, esta corrida se aborta (`duplicado_abortado`), no se publica una "segunda opinión".
 - Nunca publicar un comentario de corrección/profundización técnica (tipo `[TRIAGE-CORRECCION]`) por separado, después de ya haber publicado el análisis de 9 pasos y la respuesta sugerida. Toda profundización de causa raíz del Paso 5-B se incorpora al mismo documento y a la misma respuesta **antes** de publicar (Paso 6) — nunca como un comentario adicional posterior.
-- Nunca publicar el análisis de 9 pasos (6.2) si no pasó el control de calidad de esa sección (9 secciones completas y coherentes entre sí) — regenerar una vez antes de publicar, en vez de publicar una versión confusa o incompleta.
+- Nunca publicar el análisis de 9 pasos (6.2) si no pasó el control de calidad de esa sección (9 secciones completas — **incluida la §7** — y coherentes entre sí) — regenerar una vez antes de publicar, en vez de publicar una versión confusa o incompleta. **Excepción de remediación:** si un análisis ya publicado omitió la §7 o el script obligatorio por error de una corrida anterior, se permite **un único** followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` con solo lo omitido (no un segundo análisis completo ni un `[TRIAGE-CORRECCION]` de causa raíz).
 - Nunca dejar la sección de acciones de §7 sin el nombre exacto de la ventana del sistema cuando la solución implique una acción operativa en el ERP — si no se puede confirmar con las fuentes de esta corrida, declararlo explícitamente en la sección 9 en vez de omitir la instrucción o generalizarla.
 - Nunca adoptar un ticket relacionado o precedente histórico (propio o detectado por el motor) como causa raíz de este ticket sin haberlo falseado contra un dato concreto de este ticket (Paso 5-B, punto 3) — la similitud de síntoma o de módulo nunca es evidencia suficiente por sí sola. Si no se confirma, o si el análisis propio sostiene una causa distinta, declararlo explícitamente sin relación en las secciones 1 y 4, nunca dejarlo implícito como la solución.
 - Nunca fijar la causa raíz sobre un archivo de código (jrxml, función, trigger, clase Java) que no se haya confirmado, mediante el rastreo del Paso 5 punto 3-bis, como el componente real responsable del proceso/documento del ticket — un archivo "similar" o del mismo módulo no confirmado se registra como `COMPONENTE_NO_CONFIRMADO`, no como base de un diagnóstico cerrado.
