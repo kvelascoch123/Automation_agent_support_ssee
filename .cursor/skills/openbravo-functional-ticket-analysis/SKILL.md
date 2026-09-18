@@ -32,10 +32,28 @@ Ejecutar esta skill cuando el usuario:
 
 | Subtipo | Señales | Flujo principal |
 |---------|---------|-----------------|
-| **A. Incidencia / error** | Falla, mensaje de error, no deja guardar, inconsistencia con documento concreto | Pasos 0 → 1 → 2 → 4 (formato incidencia) |
+| **A. Incidencia / error** | Falla, mensaje de error, no deja guardar, inconsistencia con documento concreto | Pasos 0-A → 0 → 1 → 2 → 4 (formato incidencia) |
 | **B. Consulta de viabilidad** | «¿Existe…?», «¿Se puede…?», sin síntoma de fallo; pregunta por capacidad o procedimiento | Pasos 0B → 1B → 2B → 4B (formato viabilidad) |
 
 Si la consulta mezcla ambos (ej. «¿se puede hacer X?» y «me sale error Y»), aplicar **ambos** flujos: primero viabilidad, luego incidencia sobre el error.
+
+---
+
+## Paso 0-A — Evaluar suficiencia de contexto (obligatorio, subtipo Incidencia)
+
+Antes de normalizar y analizar, evaluar si el ticket trae los **5 mínimos funcionales**:
+
+| # | Mínimo funcional | Pregunta que responde |
+|---|---|---|
+| 1 | **Módulo y documento** | ¿Es factura de venta/compra, retención, pago, ajuste de inventario, asiento, nómina…? ¿Qué número/tipo de documento? |
+| 2 | **Acción exacta** | ¿Qué estaba haciendo el usuario cuando falló? (contabilizar, anular, reactivar, procesar, generar XML…) |
+| 3 | **Síntoma literal** | ¿Mensaje de error textual, código, o comportamiento observado? "No funciona" no es un síntoma. |
+| 4 | **Resultado esperado vs. obtenido** | ¿Qué debía pasar y qué pasó en su lugar? |
+| 5 | **Alcance y entorno** | ¿Un documento puntual o todos? ¿Producción? ¿Desde cuándo? ¿Qué cliente/alias de BD? |
+
+**Decisión:**
+- **Faltan 2 o más** → contexto insuficiente. En uso interactivo (consultor en Cursor), generar entre 3 y 8 preguntas concretas orientadas a cerrar exactamente los mínimos ausentes (usar el mapa 5B para identificar el módulo probable y afinar las preguntas) y presentarlas al usuario antes de seguir. En uso automático vía `triage-glpi-auto`, esta es la misma evaluación que aplica el Paso 4.3 de ese orquestador — no se repite ahí como un chequeo aparte, es este mismo paso.
+- **Faltan 0 o 1** → contexto suficiente. Continuar a Paso 0, señalando igual el dato faltante en la sección 9 del documento final.
 
 ---
 
@@ -160,7 +178,7 @@ Esto se hace siempre, no solo cuando ya se sospecha un problema de configuració
 
 1. **¿Qué capacidad exacta se pregunta?** (crear, aplicar, automatizar, parcial, por cuota/línea/documento)
 2. **¿Qué dice el core Openbravo?** (módulos estándar: `org.openbravo.*`, APRM, etc.)
-3. **¿Qué dice esta instalación (Unnoparts)?** Explorar directamente el repo de código de ese cliente para el módulo candidato — `graphify-out/` y código fuente (Java, funciones PL/SQL, `AD_*.xml`) — siguiendo el procedimiento del Paso 5A. Buscar ahí triggers/reglas propias del proyecto (`SSPCH_*`, `SSOREL_*`, extensiones `em_*`).
+3. **¿Qué dice esta instalación (la del cliente resuelto en `clientes.json` para este ticket)?** Explorar directamente el repo de código de ese cliente para el módulo candidato — `graphify-out/` y código fuente (Java, funciones PL/SQL, `AD_*.xml`) — siguiendo el procedimiento del Paso 5A. Buscar ahí triggers/reglas propias del proyecto (`SSPCH_*`, `SSOREL_*`, extensiones `em_*`).
 4. **¿Hay reglas de negocio que restrinjan el flujo?** (cobranza secuencial, FE obligatoria, estados de documento, etc.)
 5. **Si NO es posible de forma directa:** ¿existe **workaround operativo** documentado o inferible en el proyecto?
 6. **¿Hay flujo alternativo específico del proyecto?** (pre-cancelación, acuerdo de pago, cruce de anticipo, etc.)
@@ -218,6 +236,10 @@ Si el dominio no está claro, declararlo en sección 9 y bajar confianza a **Med
 - No ejecutar `update.sh` / `smartbuild.sh` sin confirmación explícita (regla openbravo-build).
 - Priorizar precisión sobre extensión.
 - Si hay varias causas, ordenar por probabilidad e indicar cómo descartarlas.
+- **Descuadres contables (asientos, cuentas mal asignadas, conciliación con diferencia):** la verificación en BD de producción (Paso 5A + `pg_query`) es siempre obligatoria antes de cerrar el diagnóstico — nunca cerrar un caso contable solo con conocimiento estático o lectura de código, aunque el síntoma parezca claro.
+- Al proponer revertir un flujo A→B→C (ej. descontabilizar antes de reactivar), siempre en orden inverso: primero C, luego B, luego A.
+- Retenciones en Ecuador (fuente e IVA): tributariamente sensibles — máxima precaución, respaldo en ATS antes de sugerir corrección, y escalar si hay duda en vez de asumir.
+- **Disciplina SQL contra la BD de producción del cliente (`pg_query`/MCP-DB), siempre:** solo `SELECT` — nunca `INSERT`/`UPDATE`/`DELETE`/`DDL` ejecutado por este análisis. Siempre `WHERE` con filtros precisos (organización, cliente, fechas, ID de documento) y `LIMIT` en tablas de alto volumen (`Fact_Acct`, `C_Invoice`, `C_Payment`, `M_Transaction`, `C_AllocationLine`, `C_BankStatementLine`, y sus equivalentes en minúscula del modelo físico). Si el resultado es extenso, resumir — no volcar tablas completas en ningún comentario o respuesta. Un script correctivo que sí requiera escritura se entrega siempre como texto sugerido para ejecución manual (ver Paso 6-B de `triage-glpi-auto` en modo automático, o directo al consultor en modo interactivo) — nunca ejecutado por esta skill.
 
 ### Separación obligatoria: consultor vs usuario final
 
@@ -262,7 +284,12 @@ Entregar **siempre** en este orden:
 ...
 
 ## 4) Causa raíz probable
-...
+- **Síntoma:** qué reporta o percibe el usuario.
+- **Causa inmediata:** qué dispara el error o comportamiento (trigger, validación, condición puntual). Clasificar además con uno de estos 5 tipos (vocabulario estándar, siempre en este nivel o en Causa raíz — nunca en Síntoma ni en Causa estructural): configuración faltante o incorrecta / estado del documento (contabilizado, pagado, período cerrado) / restricción de negocio del sistema (trigger/función que valida) / dato del cliente erróneo / bug real (último recurso, no la primera hipótesis).
+- **Causa raíz:** por qué existe esa condición (qué proceso/flujo la generó). Si el tipo de la lista anterior describe mejor este nivel que el de "Causa inmediata" (ej. la condición inmediata es un síntoma de un dato del cliente erróneo que se originó más arriba), documentarlo aquí en vez de en el nivel anterior — el tipo se declara una sola vez, en el nivel donde realmente corresponde.
+- **Causa estructural:** por qué el sistema permitió que esa condición se produjera sin corregirse sola (ej. una sincronización que el flujo estándar hace pero un módulo custom no replica).
+
+Los cuatro niveles son obligatorios siempre que la evidencia alcance para distinguirlos; si alguno no se pudo determinar con las fuentes de esta corrida, declararlo explícitamente en vez de omitirlo o colapsarlo con el nivel anterior. El tipo de causa (los 5 mencionados arriba) es un dato más granular que complementa un nivel — nunca un quinto nivel aparte, y nunca se repite en más de un nivel para la misma causa.
 {Si la conclusión es "no hay error" / "comportamiento esperado": no cerrar solo con consistencia interna del propio registro — citar aquí el resultado concreto de la comparación contra pares del Paso 2, punto 7 (sección 5D) que la respalda. Si se comparó más de un campo de configuración, listar el resultado de cada uno (no solo el que confirma la hipótesis principal) — cualquier otro campo que también resulte una excepción frente a sus hermanos se reporta aquí como causa candidata adicional o complementaria, para que el plan de solución (sección 5) ofrezca esa alternativa al usuario en vez de omitirla.}
 
 **Tabla de hipótesis (obligatoria cuando la causa candidata sea un registro maestro/configuración):**
@@ -276,8 +303,10 @@ Regla de esta tabla: **una fila por cada columna `EM_*` distinta identificada en
 
 ## 5) Plan de solución (consultor / soporte técnico)
 ### A. Corrección inmediata (paso a paso)
-### B. Validaciones previas (checklist)
-### C. Riesgos/controles
+### B. Workaround vs. solución definitiva (si aplica)
+Si existe una forma de mitigar el síntoma mientras se corrige la causa raíz de fondo, declarar ambas por separado y etiquetadas explícitamente — nunca presentar una como si fuera la otra: **Solución temporal/workaround** (qué hacer ya para reducir el impacto inmediato) y **Solución definitiva** (qué corrige la causa raíz/estructural de la sección 4). Si no hay distinción entre ambas (la corrección inmediata ya cierra el caso de fondo), omitir esta subsección.
+### C. Validaciones previas (checklist)
+### D. Riesgos/controles
 
 ## 6) Escalamiento (si aplica)
 ...
@@ -487,7 +516,7 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | Anti-patrón | Por qué falla | Qué hacer en su lugar |
 |-------------|---------------|------------------------|
 | Responder solo con inventario de módulos | No responde SÍ/NO al usuario | Veredicto primero, módulos en sección 5D |
-| Asumir capacidad del core sin revisar `ec.com.*` | Conclusión incorrecta en Unnoparts | Buscar triggers y validaciones del proyecto |
+| Asumir capacidad del core sin revisar los módulos de personalización del cliente (`ec.com.<cliente>.*`, o el namespace propio de ese repo) | Conclusión incorrecta para la instalación real de ese cliente | Buscar triggers y validaciones del proyecto en el repo resuelto vía `clientes.json` |
 | Proponer flujo manual que contradice triggers | Usuario fallará en pantalla | Validar secuencia, cobranza, estados |
 | Omitir workaround cuando la respuesta es NO | Ticket sin solución | Siempre pasos alternativos operativos |
 | Mezclar SQL/código en sección 7 | Audiencia incorrecta | Reservar para sección 5D |
@@ -499,7 +528,7 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 
 ## Paso 5 — Exploración: repo del cliente (graphify + código) (cuando aplique)
 
-### 5A. Exploración de graphify y código (obligatoria)
+### Paso 5A. Exploración de graphify y código (obligatoria)
 
 Toda revisión de módulo se hace sobre el **repo de código del cliente** — nunca sobre documentación pre-generada. Dos fuentes, en este orden:
 
@@ -511,7 +540,9 @@ Toda revisión de módulo se hace sobre el **repo de código del cliente** — n
 6. **No fijar la causa raíz sobre un archivo de código (jrxml, función, trigger, clase Java) que no se haya confirmado como el componente que realmente interviene en el proceso reportado.** Cuando `graphify-out/` no resuelve el archivo por nombre, reconstruir la cadena completa antes de concluir: ventana/proceso/botón que dispara la acción → definición del reporte o proceso (`AD_Process`, `AD_ReportView`, o el proceso configurado en la ventana) → plantilla/consulta/función exacta → triggers o clases Java involucradas. Cada eslabón se confirma leyendo código o configuración real — nunca por similitud de nombre o de módulo. Si no se puede confirmar el siguiente eslabón con las fuentes disponibles, declarar en sección 9 que el componente no fue confirmado y dejar esa vía como hipótesis a verificar por un técnico, no como causa raíz cerrada.
 7. **Si existe un ticket o caso precedente similar (por síntoma o por módulo)**: tratarlo como una hipótesis más, nunca como conclusión automática. Antes de adoptarlo, identificar un dato concreto y verificable **de este caso** (no del precedente) que el mecanismo del precedente obligue a que sea cierto (ej. número de líneas de un documento, valor de un campo específico) y verificarlo contra la fuente correspondiente antes de redactar la sección 4. Si el dato contradice el precedente, o la evidencia propia de este caso sostiene una causa distinta, descartarlo explícitamente en las secciones 1 y 4 en vez de dejarlo implícito como la solución.
 
-### 5B. Mapa dominio → módulos (punto de partida)
+### Paso 5B. Mapa dominio → módulos (punto de partida)
+
+**Nota sobre estos nombres:** los módulos custom no se identifican por el nombre del cliente del registro GLPI — se organizan por **flujo de trabajo** dentro del namespace de quien implementó ese repo (ej. `ec.com.sidesoft.<flujo>` agrupa por función — `bpartner.create`, `blacklist`, `account.doctype`, etc. — no por cliente final; varios clientes distintos pueden compartir ese mismo namespace y catálogo base de módulos). Un repo con implementador o convención propia distinta (ej. Unnoparts, namespace `unnoparts.*`) tendrá nombres de módulo diferentes para el mismo dominio funcional. Esta tabla es un **punto de partida con nombres ya observados en instalaciones exploradas anteriormente** — antes de asumir que un nombre de esta tabla existe en el repo del cliente de este ticket, confirmarlo contra `graphify-out/manifest.json` o el listado real de directorios de ese repo (Paso 5A); si no aparece ahí, buscar por palabra clave del dominio en vez de por el nombre literal.
 
 | Dominio | Módulos a explorar en el repo |
 |---------|-------------------------------|
@@ -524,7 +555,32 @@ Toda revisión de módulo se hace sobre el **repo de código del cliente** — n
 | Crédito / cotización | `fast.quotation`, `unnoparts.credit.factory`, `credit.operation.request` |
 | POS | regla `openbravo-pos` + código del módulo retail |
 
-### 5C. Resolver nombres exactos de UI (ventanas, botones, procesos)
+### Paso 5B-bis. Conocimiento estático por módulo (si está cargado en el proyecto)
+
+Antes de ir a `graphify-out/`/código (Paso 5A), revisar si el módulo candidato ya tiene documentación funcional/técnica cargada en el proyecto — es más barato que explorar el repo desde cero y puede resolver el caso sin tocar código:
+
+| Archivo | Módulo / contenido |
+|---|---|
+| `01-Facturacion-Electronica.md` | Facturación electrónica SRI |
+| `02-Retenciones.md` | Retenciones en la fuente e IVA |
+| `03-Pagos-Cobros-CxP-CxC.md` | Pagos, cobros, cuentas por pagar/cobrar |
+| `04-Tesoreria-Cierre-Caja.md` | Tesorería y cierre de caja |
+| `05-Contabilidad.md` | Contabilidad general |
+| `06-Devoluciones-Descuentos.md` | Devoluciones y descuentos |
+| `07-Recursos-Humanos.md` | Recursos humanos |
+| `08-Nomina.md` | Nómina |
+| `09-Activos-Fijos.md` | Activos fijos |
+| `10-Inventario.md` | Inventario |
+| `11-Compras.md` | Compras |
+| `12-Ventas.md` | Ventas |
+| `13-Produccion.md` | Producción |
+| `14-Terceros-Business-Partners.md` | Terceros / Business Partners |
+| `15-Plataforma-Configuracion.md` | Plataforma y configuración general |
+| `casos_de_uso_openbravo_erp.md` | Casos de uso generales del ERP — flujos estándar para entender qué debería pasar |
+
+Cada archivo de módulo trae su propia tabla "Technical" con rutas de Java/Web/modelo físico — usar esas rutas para ir directo al código en el Paso 5A en vez de explorar el repo a ciegas. Esta tabla de archivos es específica de cada proyecto/cliente: si el repo de este ticket no tiene estos archivos cargados (o tiene un índice distinto, ej. `KN-00-indice-maestro.md`), continuar directo con el Paso 5A sin esta fuente y anotarlo en sección 9. Si algún archivo referencia sub-documentos que no existen en el proyecto (patrón frecuente en clientes migrados desde una versión anterior de esta documentación), ignorar esa referencia e ir directo al código fuente real vía la tabla "Technical" del propio archivo de módulo, no intentar abrir el sub-documento inexistente.
+
+### Paso 5C. Resolver nombres exactos de UI (ventanas, botones, procesos)
 
 1. Para **botones/campos citados en §7**: confirmar en `AD_FIELD.xml` / `AD_PROCESS.xml` del módulo, en el repo de código del cliente.
 2. Para **la ventana donde el usuario debe ejecutar la acción correctiva** (ej. un ajuste de inventario, una reversión): resolver su nombre exacto y su ruta de menú en es_ES vía `AD_MENU.xml` / `AD_WINDOW.xml` del módulo correspondiente. Este nombre y ruta son los que van a §7 (ver plantilla) — **nunca** se generaliza a "la ventana correspondiente" o "consulte con su consultor" si ya se pudo confirmar en el código.
@@ -534,7 +590,7 @@ Toda revisión de módulo se hace sobre el **repo de código del cliente** — n
 
 Citar archivos/funciones solo cuando confirmen el veredicto. Traducir hallazgos a **lenguaje de proceso** en la sección 7.
 
-### 5D. Evidencia desde graphify y código (obligatoria en sección 5)
+### Paso 5D. Evidencia desde graphify y código (obligatoria en sección 5)
 
 Incluir bullets del tipo:
 
