@@ -550,6 +550,7 @@ Invocar el flujo completo de 9 pasos de esa skill (vive en el repo orquestador, 
 - **Cuando la causa raíz sea una regla de negocio controlada por un campo de configuración** (una regla de facturación, un flag de un tipo de documento, un parámetro de módulo) — **incluso cuando el veredicto sea "comportamiento esperado, no un error"** — no basta con nombrar la regla ("la facturación es Después de entregado"). Hay que resolver y citar **dónde se configura** esa regla (ventana/pestaña/campo exactos, o tabla/columna si no tiene ventana propia) en la sección 4/5, y ofrecerlo en §7 como paso opcional ("si prefieren que esto funcione distinto, el ajuste se hace en...") para que el cliente sepa qué tocar si decide cambiar la política, sin tener que abrir otro ticket para preguntarlo.
 - **Antes de recomendar en la sección 5/6 el cambio de un campo/parámetro como solución de fondo o como ajuste opcional**: confirmar que el nombre exacto de columna propuesto es **el mismo** que quedó "Confirmada" en la tabla de hipótesis del Paso 5-B punto 3 — no un campo de nombre o dominio parecido. Distintos módulos de personalización pueden definir su propio campo con semántica similar sobre la misma tabla (ej. varias columnas `EM_*` de "regla de facturación" de prefijos distintos, cada una gobernando un comportamiento independiente salvo que el código confirme lo contrario). Si el campo que resolvería el ajuste de negocio que pide el usuario no es el mismo que la causa raíz confirmada, decir ambos por separado en §7 — nunca ofrecer el campo equivocado como si fuera "el" ajuste.
 - **Toda afirmación en §7 de tipo "alineado con [otro tipo de documento/registro]" o "es el comportamiento esperado"** debe corresponder a una hipótesis de tipo "registro maestro anómalo" marcada **Descartada** en la tabla de hipótesis (Paso 5-B, punto 3) con **todas** sus columnas `EM_*` candidatas probadas — nunca a la comparación de una sola columna cuando la enumeración (punto 1, incluyendo 1-ter) identificó más candidatas sin probar todavía.
+- **Todo campo de configuración evaluado en el Paso 5-B punto 3 que quedó Descartado como causa pero gobierna un comportamiento automático del mismo flujo del ticket** (ej. Completar Albarán / Completar Factura en el tipo de documento del caso) se marca **Informativa** (estado definido en `openbravo-functional-ticket-analysis`, Paso 4) y **debe aparecer en §7** dentro de "Otras opciones a considerar", como un punto más que el usuario debe validar: qué hace en lenguaje llano, cómo está hoy, dónde se cambia, y **explícitamente que no corrige este caso puntual** (nunca presentarlo como si resolviera el síntoma). Descartar un campo como causa no autoriza a omitirlo de la respuesta. Las filas Complementarias (resolverían el caso por otra vía) siguen siendo obligatorias en §7 y se distinguen de las Informativas en el texto.
 - **Cuando la solicitud pide cambiar un valor de configuración que vive en un campo de interfaz** (ej. la fórmula de un concepto, un parámetro, un texto de validación) y no es una corrección de datos rotos: no basta con describir la acción en términos genéricos ("agregar X a la fórmula", "incluir el concepto junto a los demás"). El análisis debe (1) consultar por BD el valor/fórmula actual del campo (Paso 3-B), (2) construir el valor nuevo exacto siguiendo el mismo patrón que ya usan los campos/registros hermanos identificados en el punto 5 de arriba, (3) dejar ese script de actualización listo en el Paso 6-B (mismo formato: texto sugerido, nunca ejecutado automáticamente), y (4) en §7 indicar, en lenguaje llano y sin SQL ni nombres de tabla, el campo/ventana exacto y el valor final que debe quedar ahí — de modo que quien aplique el cambio (por script o manualmente desde la interfaz) sepa con certeza qué poner, sin tener que deducirlo.
 - El bloque de acciones a ejecutar dentro de §7 se titula siempre **"Solución a aplicar o verificar"** (nunca "Qué hacer ya" / "Qué hacer ahora") — mantener este título de forma consistente en todos los tickets.
 
@@ -619,19 +620,19 @@ INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_edi
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
 
-- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`), sin tocar `status`.
+- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`). El `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1 — un análisis ya publicado nunca deja el ticket en Nuevo.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
 ```
 
-- **Score <= 70**: no publicar este comentario.
+- **Score <= 70**: no publicar este comentario. Esto **no** implica dejar el ticket sin gestionar: el `[TRIAGE-SLA-SCORE]` y el `[TRIAGE-ANALISIS-9PASOS]` ya se publicaron, así que el `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1, para que un técnico tome el caso y el ticket no vuelva a la cola de Nuevos.
 
 ### 6.4 — Actualizar el estado del ticket (excepciones puntuales a "nunca modificar status")
 
-Por regla general este flujo no toca `status`. Hay exactamente dos excepciones, según cómo terminó el ticket en esta corrida:
+Por regla general este flujo no toca `status`. Las excepciones son las siguientes, según cómo terminó el ticket en esta corrida (A, A-1 y B cubren todo ticket que llega hasta publicar análisis o preguntas):
 
-**Caso A — Se aplicó el comentario como solución del ticket (6.3, score > 90):** dejar el ticket en Resuelto (status = 5), asignado al técnico kvelasco.
+**Caso A — Se aplicó el comentario como solución del ticket (6.3, score >= 90):** dejar el ticket en Resuelto (status = 5), asignado al técnico kvelasco.
 ```sql
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
@@ -647,7 +648,9 @@ VALUES ({ticket_id}, {ID_KVELASCO}, 2);
 UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
 ```
 
-**Caso A-1 — Score de acertividad mayor a 80 y menor a 90 (6.3):** dejar el ticket en En curso (planificado) (status = 3), asignado al técnico kvelasco.
+**Caso A-1 — Análisis de 9 pasos publicado con score de acertividad menor a 90 (cualquier valor, incluido <= 70 sin respuesta sugerida publicada — `ok_baja_confianza` y `ok_alta_confianza` con score < 90):** dejar el ticket en En curso (planificado) (status = 3), asignado al técnico kvelasco.
+
+Existe para impedir un fallo concreto ya ocurrido (ticket 9938): el análisis de 9 pasos se publicó completo pero, al no alcanzar el score para publicar respuesta sugerida ni solución, el ticket quedó en Nuevo y sin técnico. Como el cron de n8n busca `status = 1`, un ticket que queda en Nuevo se vuelve a tomar y el motor completo se re-ejecuta indefinidamente (el Paso 4.-1 solo cubre una ventana de 15 minutos). Un ticket con análisis ya publicado nunca debe quedar en Nuevo: pasa a Planificado y a un técnico, tenga o no respuesta sugerida.
 ```sql
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
@@ -676,7 +679,7 @@ VALUES ({ticket_id}, {ID_KVELASCO}, 2);
 UPDATE glpi_tickets_users SET users_id = {ID_KVELASCO} WHERE tickets_id = {ticket_id} AND type = 2;
 ```
 
-**Cualquier otro caso** (`proyecto_no_registrado`, `esperando_respuesta_cliente`, `ok_baja_confianza`, `error`): no tocar `status` ni la asignación — sigue aplicando la regla original.
+**Cualquier otro caso** (`proyecto_no_registrado` — que ya se movió a Planificado en el Paso 2-A —, `esperando_respuesta_cliente` — que ya quedó En espera por el Caso B de una corrida anterior —, `error`): no tocar `status` ni la asignación — sigue aplicando la regla original. `error` se deja sin cambio de `status` a propósito, para permitir el reintento (no se publicó análisis).
 ```sql
 UPDATE glpi_tickets
 SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
@@ -740,7 +743,7 @@ Reglas de estilo, siempre las mismas (no reinventar el formato por comentario, p
 - `<table border="1" cellpadding="4" cellspacing="0" width="100%">` — siempre estos cuatro atributos, en ese orden, en toda tabla comparativa. `border="1"` es lo único que garantiza líneas visibles entre celdas sin usar `style`.
 - Encabezado (`<th>`): siempre `bgcolor="#e8e8e8" align="left"` — gris claro, alineado a la izquierda (nunca centrado: dificulta el escaneo vertical de nombres de campo/columna largos).
 - Celda con Estado **Confirmada**: `bgcolor="#e6f4ea"` (verde muy claro) — resalta de un vistazo cuál hipótesis quedó activa.
-- Celda con Estado **Descartada**: `bgcolor="#fbeaea"` (rojo muy claro), opcional si ayuda a distinguir rápido; con **Complementaria**: `bgcolor="#fff6e0"` (ámbar muy claro).
+- Celda con Estado **Descartada**: `bgcolor="#fbeaea"` (rojo muy claro), opcional si ayuda a distinguir rápido; con **Complementaria**: `bgcolor="#fff6e0"` (ámbar muy claro), con **Informativa**: `bgcolor="#e8f0fb"` (azul muy claro).
 - Un solo atributo por propiedad (`bgcolor`, `align`, `border`, `cellpadding`, `cellspacing`, `width`) — nunca combinarlos dentro de un `style` con más de una declaración, por la restricción del punto y coma.
 
 **Para la matriz de registro maestro × campos `EM_*`** (Paso 5-B punto 1, matriz completa de `openbravo-functional-ticket-analysis` Paso 4): mismos atributos de tabla, y además:
@@ -796,7 +799,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 
 ## Reglas críticas (aplican siempre, sin excepción)
 
-- Nunca modificar `status`, salvo las excepciones puntuales ya definidas en esta skill: Caso Capacitación (Paso 4.0 → En curso (planificado) + asignado a kvelasco), Caso Proyecto no registrado (Paso 2-A → En curso (planificado) + asignado a bruno díaz), score >= 90 (Paso 6.4 Caso A → Resuelto + asignado a kvelasco), score > 80 y < 90 (Paso 6.4 Caso A-1 → En curso (planificado) + asignado a kvelasco), y triage de preguntas (Paso 6.4 Caso B → En espera + asignado a kvelasco). Fuera de esos casos, `status` no se toca.
+- Nunca modificar `status`, salvo las excepciones puntuales ya definidas en esta skill: Caso Capacitación (Paso 4.0 → En curso (planificado) + asignado a kvelasco), Caso Proyecto no registrado (Paso 2-A → En curso (planificado) + asignado a bruno díaz), score >= 90 (Paso 6.4 Caso A → Resuelto + asignado a kvelasco), todo análisis de 9 pasos publicado con score < 90, incluido score <= 70 sin respuesta sugerida (Paso 6.4 Caso A-1 → En curso (planificado) + asignado a kvelasco), y triage de preguntas (Paso 6.4 Caso B → En espera + asignado a kvelasco). Fuera de esos casos, `status` no se toca. **Nunca dejar en Nuevo (status = 1) un ticket cuyo análisis de 9 pasos ya se publicó** — el cron de n8n lo reprocesaría en bucle.
 - Nunca inventar nombres de técnicos ni datos que no vengan en el ticket.
 - Nunca asignar SLA 1 sin bloqueo total confirmado explícitamente en la descripción.
 - Nunca repetir preguntas de aclaración ya enviadas mientras no haya respuesta nueva del solicitante.
@@ -833,6 +836,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca cerrar un diagnóstico —incluida la conclusión de que "no hay error" o "es el comportamiento esperado"— apoyándose solo en que el registro es consistente con su propio historial, sin haberlo comparado antes contra sus pares/registros similares (Paso 5-B, punto 1). Consistencia interna (esto siempre pasa así para este registro) no es evidencia de corrección frente a sus pares — esa comparación se hace siempre antes de cerrar, cubriendo tantos escenarios comparables como sea razonable, no solo cuando ya se sospecha un problema de configuración, y su resultado queda registrado en la sección 9 y refleja el score de acertividad (Paso 6.1). Cuando la causa candidata sea un flag/parámetro de un registro maestro (tipo de documento, concepto, parámetro de módulo), comparar transacciones que comparten esa misma configuración **no cumple** esta regla — la comparación debe ser contra los registros maestros hermanos de la misma familia.
 - Nunca limitar la enumeración de columnas `EM_*` candidatas (Paso 5-B, punto 1, 1-bis) a lo que el repo/`graphify-out/` pueda mostrar — `pg_describe_table` sobre la tabla maestra en cuestión (punto 1-ter) es una fuente independiente y obligatoria, no un respaldo opcional, y es la **única** fuente válida cuando el repo esté `REPO_INACCESIBLE` o `ESTRUCTURA_NO_DETECTADA` para esta corrida. No cerrar la comparación de pares citando solo el estado del repo en la sección 9 sin haber corrido esta introspección primero.
 - Nunca descartar la hipótesis general de "registro maestro anómalo" (Paso 5-B, punto 3) tras probar una sola columna `EM_*` que resultó alineada con los hermanos, cuando la enumeración del punto 1 identificó otras columnas candidatas sobre la misma tabla sin probar — cada columna candidata es su propia fila en la tabla de hipótesis; la hipótesis general solo se descarta cuando todas quedaron probadas.
+- Nunca omitir de §7 un campo de configuración marcado Informativa o Complementaria en la tabla de hipótesis (Paso 5-B, punto 3) solo porque fue descartado como causa raíz o porque no resolvería el síntoma — los campos Informativos se informan como punto a validar (aclarando que no corrigen este caso puntual) y los Complementarios como alternativa de solución. Callar un campo relacionado por haberlo descartado como causa deja al usuario sin poder validar esa configuración.
 - Nunca recomendar en la sección 5/6 o en §7 el cambio de un campo/parámetro distinto, por nombre, al que quedó "Confirmada" en la tabla de hipótesis del Paso 5-B punto 3 — un campo de nombre o dominio parecido, de otro módulo de personalización, puede ser independiente y no resolver el síntoma reportado.
 - Nunca presentar una tabla de hipótesis, comparación contra pares, o alcance (Paso 5-B, puntos 1/3/5) como texto corrido separado por `|` en los comentarios técnicos (6.1, 6.2) — usar la tabla HTML con atributos legacy (`border`, `cellpadding`, `bgcolor`, `align`) del Paso 6-A-bis, dentro del límite de tamaño de cada followup.
 - Nunca usar un atributo `style` con más de una declaración CSS (separadas por punto y coma) en las tablas de comentarios (Paso 6-A-bis) — viola la restricción dura del punto y coma en strings enviados al MCP (arriba, Paso 6-A). Usar siempre los atributos HTML legacy (`border`, `cellpadding`, `cellspacing`, `bgcolor`, `align`, `width`), que no requieren punto y coma.
