@@ -709,20 +709,51 @@ Al inicio de cada corrida, no confiar en los ids de followup de un registro ante
 
 Esta sección solo mejora cómo se ve una comparación ya exigida por el análisis (Paso 5-B, puntos 1, 3 y 5) — no agrega ni quita ningún requisito de contenido.
 
-Cuando el comentario `[TRIAGE-ANALISIS-9PASOS]` (6.2) incluya una tabla de hipótesis y descarte, una comparación contra pares/registros similares, o una comparación de alcance, **renderizarla como una tabla HTML compacta** en vez de una línea corrida separada por `|`:
+**Problema detectado (2026-09-18, ticket 9934):** las tablas se publicaban como `<table><tr><th>...` sin ningún atributo de estilo. GLPI no aplica un CSS de tabla por defecto a los comentarios, así que el resultado se ve sin bordes, sin sombreado de encabezado y sin alineación clara — exactamente el problema reportado. La causa no era el contenido del análisis (la matriz ya traía los datos correctos), era la falta de estilo en el HTML.
+
+**Restricción dura que condiciona la solución:** el punto y coma está prohibido en cualquier string enviado al MCP (ver "Caracteres a evitar" arriba) — y un atributo `style="border:1px solid #999;padding:4px 8px"` con más de una declaración CSS usa punto y coma entre declaraciones, así que **queda descartado**, aunque sea la forma "moderna" de estilar HTML. La solución es usar **atributos HTML legacy** (`border`, `cellpadding`, `cellspacing`, `bgcolor`, `align`, `width`) en vez de `style` con varias declaraciones — todo navegador y el visor de GLPI los siguen renderizando igual, y ninguno usa punto y coma:
 
 ```html
-<table><tr><th>Hipótesis</th><th>Evidencia</th><th>Resultado</th><th>Estado</th></tr>
-<tr><td>H1 ...</td><td>...</td><td>...</td><td>Confirmada</td></tr>
-<tr><td>H2 ...</td><td>...</td><td>...</td><td>Descartada</td></tr></table>
+<table border="1" cellpadding="4" cellspacing="0" width="100%">
+<tr>
+<th bgcolor="#e8e8e8" align="left">Hipótesis</th>
+<th bgcolor="#e8e8e8" align="left">Campo</th>
+<th bgcolor="#e8e8e8" align="left">Resultado</th>
+<th bgcolor="#e8e8e8" align="left">Estado</th>
+</tr>
+<tr>
+<td>H1 ...</td>
+<td>nombre_columna</td>
+<td>...</td>
+<td bgcolor="#e6f4ea"><b>Confirmada</b></td>
+</tr>
+<tr>
+<td>H2 ...</td>
+<td>otro_campo</td>
+<td>...</td>
+<td bgcolor="#fbeaea">Descartada</td>
+</tr>
+</table>
 ```
 
-Mismo patrón para la comparación contra pares (Paso 5-B, punto 1) — ej. tipo de documento vs. flags de configuración — y para la tabla de alcance (Paso 5-B, punto 5): encabezados cortos, una fila por elemento comparado, celdas con el valor concreto (no la descripción larga de por qué importa; eso va en el texto alrededor de la tabla).
+Reglas de estilo, siempre las mismas (no reinventar el formato por comentario, para que todos los tickets se vean igual):
+- `<table border="1" cellpadding="4" cellspacing="0" width="100%">` — siempre estos cuatro atributos, en ese orden, en toda tabla comparativa. `border="1"` es lo único que garantiza líneas visibles entre celdas sin usar `style`.
+- Encabezado (`<th>`): siempre `bgcolor="#e8e8e8" align="left"` — gris claro, alineado a la izquierda (nunca centrado: dificulta el escaneo vertical de nombres de campo/columna largos).
+- Celda con Estado **Confirmada**: `bgcolor="#e6f4ea"` (verde muy claro) — resalta de un vistazo cuál hipótesis quedó activa.
+- Celda con Estado **Descartada**: `bgcolor="#fbeaea"` (rojo muy claro), opcional si ayuda a distinguir rápido; con **Complementaria**: `bgcolor="#fff6e0"` (ámbar muy claro).
+- Un solo atributo por propiedad (`bgcolor`, `align`, `border`, `cellpadding`, `cellspacing`, `width`) — nunca combinarlos dentro de un `style` con más de una declaración, por la restricción del punto y coma.
+
+**Para la matriz de registro maestro × campos `EM_*`** (Paso 5-B punto 1, matriz completa de `openbravo-functional-ticket-analysis` Paso 4): mismos atributos de tabla, y además:
+- La fila del **registro del caso** lleva su primera celda (nombre del registro) envuelta en `<b>...</b>`, para ubicarla de un vistazo entre los hermanos.
+- **Toda celda cuyo valor se aparte del "Patrón mayoritario de la columna"** (la fila obligatoria de esa matriz) lleva `bgcolor="#fbeaea"` — así el ojo detecta la columna y las filas atípicas sin leer cada celda una por una. Esto incluye **todas** las filas atípicas, no solo la del caso: si dos registros comparten el valor minoritario (ej. C1 y C9), ambas celdas se resaltan igual — el resaltado no implica "es el caso", implica "se aparta de la mayoría".
+- La fila final "Patrón mayoritario de la columna" lleva `bgcolor="#f0f0f0"` y el texto envuelto en `<i>...</i>` para distinguirla de las filas de registros reales.
+
+Mismo patrón para la tabla de alcance (Paso 5-B, punto 5): encabezados cortos, una fila por elemento comparado, celdas con el valor concreto (no la descripción larga de por qué importa; eso va en el texto alrededor de la tabla).
 
 Reglas para que la tabla no rompa el límite de tamaño (6-A):
-- Máximo 4-5 columnas, encabezados y celdas cortos (palabras o valores, no oraciones).
-- Sin etiquetas anidadas dentro de una celda salvo `<b>` puntual — nada de listas ni párrafos dentro de `<td>`.
-- Si la tabla completa no entra en el followup disponible (ver 6.2, división en Parte 1/Parte 2), priorizar las columnas que sustentan la conclusión (ej. Hipótesis/Resultado/Estado, o Tipo de documento/Campo comparado/Valor) y mover el detalle narrativo extendido a texto plano alrededor, en vez de omitir filas de la comparación.
+- Máximo 4-5 columnas, encabezados y celdas cortos (palabras o valores, no oraciones). Los atributos `bgcolor`/`align` consumen algo de espacio adicional — si una matriz tiene muchas filas y columnas y no entra en el presupuesto de 6-A, priorizar mantener el formato (bordes + resaltado) sobre agregar más columnas; es mejor una tabla pequeña legible que una grande sin formato.
+- Sin etiquetas anidadas dentro de una celda salvo `<b>`/`<i>` puntual — nada de listas ni párrafos dentro de `<td>`.
+- Si la tabla completa no entra en el followup disponible (ver 6.2, división en Parte 1/Parte 2), priorizar las columnas que sustentan la conclusión (ej. Hipótesis/Resultado/Estado, o Registro maestro/Campo comparado/Valor) y mover el detalle narrativo extendido a texto plano alrededor, en vez de omitir filas de la comparación o quitar el formato.
 
 Este formato aplica a los comentarios técnicos (6.1, 6.2) — nunca a §7/6.3, que sigue sin SQL, columnas ni IDs técnicos (ver reglas de §7 en el Paso 5-B); si una comparación es relevante para el usuario final en términos de negocio, se resume ahí en lenguaje llano, sin nombres de campo ni una tabla técnica.
 
@@ -803,5 +834,7 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca limitar la enumeración de columnas `EM_*` candidatas (Paso 5-B, punto 1, 1-bis) a lo que el repo/`graphify-out/` pueda mostrar — `pg_describe_table` sobre la tabla maestra en cuestión (punto 1-ter) es una fuente independiente y obligatoria, no un respaldo opcional, y es la **única** fuente válida cuando el repo esté `REPO_INACCESIBLE` o `ESTRUCTURA_NO_DETECTADA` para esta corrida. No cerrar la comparación de pares citando solo el estado del repo en la sección 9 sin haber corrido esta introspección primero.
 - Nunca descartar la hipótesis general de "registro maestro anómalo" (Paso 5-B, punto 3) tras probar una sola columna `EM_*` que resultó alineada con los hermanos, cuando la enumeración del punto 1 identificó otras columnas candidatas sobre la misma tabla sin probar — cada columna candidata es su propia fila en la tabla de hipótesis; la hipótesis general solo se descarta cuando todas quedaron probadas.
 - Nunca recomendar en la sección 5/6 o en §7 el cambio de un campo/parámetro distinto, por nombre, al que quedó "Confirmada" en la tabla de hipótesis del Paso 5-B punto 3 — un campo de nombre o dominio parecido, de otro módulo de personalización, puede ser independiente y no resolver el síntoma reportado.
-- Nunca presentar una tabla de hipótesis, comparación contra pares, o alcance (Paso 5-B, puntos 1/3/5) como texto corrido separado por `|` en los comentarios técnicos (6.1, 6.2) — usar la tabla HTML compacta del Paso 6-A-bis, dentro del límite de tamaño de cada followup.
+- Nunca presentar una tabla de hipótesis, comparación contra pares, o alcance (Paso 5-B, puntos 1/3/5) como texto corrido separado por `|` en los comentarios técnicos (6.1, 6.2) — usar la tabla HTML con atributos legacy (`border`, `cellpadding`, `bgcolor`, `align`) del Paso 6-A-bis, dentro del límite de tamaño de cada followup.
+- Nunca usar un atributo `style` con más de una declaración CSS (separadas por punto y coma) en las tablas de comentarios (Paso 6-A-bis) — viola la restricción dura del punto y coma en strings enviados al MCP (arriba, Paso 6-A). Usar siempre los atributos HTML legacy (`border`, `cellpadding`, `cellspacing`, `bgcolor`, `align`, `width`), que no requieren punto y coma.
+- Nunca marcar una fila de la tabla de hipótesis como "Descartada — alineado con [registro X]" sin haber construido antes la matriz completa con su fila "Patrón mayoritario de la columna" (`openbravo-functional-ticket-analysis`, Paso 4) — coincidir con un hermano que también es minoritario no es evidencia de normalidad, es evidencia de una anomalía compartida.
 - Nunca cerrar una causa raíz atribuida a una regla de negocio/configuración —aunque el veredicto sea "comportamiento esperado"— nombrando solo la regla sin decir dónde se configura (ventana/campo o tabla/columna). El cliente puede querer cambiar esa política, y sin esa referencia tendría que abrir otro ticket solo para preguntar dónde ajustarla.
