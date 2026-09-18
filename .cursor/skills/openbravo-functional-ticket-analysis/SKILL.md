@@ -130,6 +130,69 @@ Indica **confianza** (Alta/Media/Baja) y si **requiere desarrollo** (Sí/No/Por 
 
 ---
 
+## Paso 1.5 — Ancla del síntoma literal y prioridad de fallo de proceso (obligatorio, incidencia)
+
+Existe para impedir un fallo concreto ya ocurrido: el ticket mostraba un error de base de datos al **registrar/completar** un documento (`null value in column "…" violates not-null constraint`), y el análisis cerró como "no hay fallo — el Estado General Proformado es esperado con facturación Después de entregado". El documento **sí** tenía tarifa y precios coherentes, pero el proceso `C_Order Post` fallaba de forma repetida en `ad_pinstance`. Responder el flujo posterior (albarán → factura) sin auditar el fallo del proceso que el usuario reportó **no cierra el ticket**.
+
+Este paso es **genérico** (cualquier documento, cualquier columna, cualquier cliente): no es un procedimiento especial de pedidos, tarifas ni financiamiento.
+
+### 1. Extraer el ancla (antes de cualquier hipótesis de flujo)
+
+Del texto, captura o `Detalles Adicionales:`, fijar **una sola ancla** de síntoma:
+
+| Clase de ancla | Señales típicas | Prioridad |
+|---|---|---|
+| **A. Fallo de proceso / BD** | `violates not-null constraint`, `ERROR=`, `@ERROR=`, stack SQL, "Error:" rojo al Completar/Registrar/Procesar/Contabilizar/Generar | **Máxima** — auditar el proceso fallido **antes** de explicar estados, reglas de facturación/entrega o "comportamiento esperado" |
+| **B. Mensaje de negocio** | `@…@`, popup de validación Openbravo, "no se puede…" con texto de aplicación | Alta — localizar validación/trigger/mensaje en código |
+| **C. Confusión de estado / flujo** | "está Proformado", "no avanza", "¿qué sigue?", sin error SQL ni popup de proceso | Media — aquí sí aplica explicar regla de facturación/entrega **después** de confirmar que el Completar/Registrar **no** falló |
+| **D. Sin ancla clara** | "no funciona" sin mensaje | Volver a Paso 0-A (mínimos) |
+
+**Regla dura:** si coexisten A y C (hay error SQL/proceso **y** el documento luce "Proformado"/parcial), la clase **A manda**. Está **prohibido** cerrar solo con la explicación de C.
+
+### 2. Desambiguación de homónimos (campos Openbravo)
+
+Cuando el usuario o el error nombren un término ambiguo, **no asumir** el significado de negocio más habitual:
+
+| Término en el ticket/error | Puede ser… | Cómo decidir |
+|---|---|---|
+| `pricelist` / "tarifa" / "lista de precios" | (1) `m_pricelist_id` en cabecera (Tarifa), (2) columna numérica `pricelist` en línea (`c_orderline`/`c_invoiceline`/tablas custom) = precio de lista | Si el error cita `column "pricelist"`, es (2). Verificar **ambos** en BD antes de decir "la tarifa está bien". |
+| `complete` / "registrar" / "procesar" | DocAction `CO`, botón Completar, o solo "guardar" | Buscar `ad_pinstance` del proceso asociado (`C_Order Post`, `C_Invoice Post`, etc.), no solo `docstatus`. |
+| Estado "Proformado" / General Status | Estado de negocio (`em_*_generalstatus`) vs `docstatus` (`IP`/`CO`/`DR`) | Reportar **los dos**. Un documento puede estar `IP` + Proformado **y** tener el Completar fallando. |
+
+### 3. Auditoría obligatoria de fallo de proceso (clase A) — con BD disponible
+
+Si la ancla es clase A y hay `pg_query`/MCP-DB (siempre en `triage-glpi-auto`; en Cursor cuando el consultor tenga la BD del cliente):
+
+1. Identificar `record_id` del documento (pedido, factura, pago, etc.) por `documentno` u otro ID del ticket.
+2. Consultar historial de proceso, por ejemplo:
+   ```sql
+   SELECT ad_pinstance_id, ad_process_id, result, errormsg, created, ad_user_id
+   FROM ad_pinstance
+   WHERE record_id = '{record_id}'
+   ORDER BY created DESC
+   LIMIT 25;
+   ```
+   Resolver el nombre del proceso (`ad_process.value`/`name`) para los `ad_process_id` relevantes.
+3. Si hay filas con `result = 0` (o equivalente de fallo) y `errormsg` alineado al síntoma: la causa candidata **es el fallo de ese proceso**, no la "siguiente pantalla del flujo". Documentarlo en §3/§4 con fecha, proceso y mensaje.
+4. Comparar el documento del caso contra **2–5 documentos hermanos exitosos** de la misma familia de negocio (mismo tipo de documento / misma org / mismo flujo), no solo contra su propia cabecera "coherente":
+   - Campos de extensión / flags de módulo custom (`em_*`) que el proceso o sus EP tocan.
+   - Filas hijas esperadas (líneas, plan de pagos, tablas satélite del módulo).
+   - Maestros referenciados por el proceso (producto auxiliar, tarifa, oferta, concepto) y si existen **en la misma combinación** que usa el documento (ej. producto X presente en la versión activa de la tarifa del documento).
+5. Solo **después** de (3)–(4), si el Completar/Registrar resultó exitoso y el síntoma real es de flujo posterior, explicar Proformado / Después de entregado / etc.
+
+**Sin BD:** declarar en §9 que la auditoría de `ad_pinstance` quedó pendiente y **bajar confianza**; **prohibido** score/cierre de "comportamiento esperado" o "el documento ya está registrado" mientras esa auditoría no se haya hecho o se haya descartado con evidencia.
+
+### 4. Anti-patrones específicos de este paso
+
+| Anti-patrón | Por qué falla | Qué hacer |
+|---|---|---|
+| Ver tarifa/maestro OK en cabecera y concluir "no es fallo de tarifas/datos" ignorando el `ERROR=` de constraint | El usuario no preguntó si el maestro existe; preguntó por qué **falla la acción** | Seguir el error hasta proceso + columna + fila que inserta/actualiza en null |
+| Responder "genere albarán y luego factura" cuando el Completar del pedido/factura **falla** | Salta el eslabón roto | Primero hacer que el proceso deje de fallar; el flujo posterior es otro ticket o un paso 2 |
+| Tratar `docstatus=IP` + estado general Proformado como prueba de que "sí se registró" | `IP` puede quedar tras intentos fallidos de `CO`; el EP puede estampar fechas de "complete" aunque el post falle | Cruzar con `ad_pinstance.result` |
+| Usar un playbook de dominio (mayoreo, FE, crédito) para cerrar sin mapear el mensaje literal a código/BD | El playbook encaja por similitud superficial y sube la confianza en falso | Ancla literal → proceso → hipótesis; el playbook solo ordena la búsqueda |
+
+---
+
 ## Paso 1B — Clasificar consulta de viabilidad
 
 | Tipo | Indicadores |
@@ -146,6 +209,7 @@ Indica **confianza** y **requiere desarrollo** (Sí/No/Por confirmar).
 
 ## Paso 2 — Análisis técnico (incidencia)
 
+0. **Ejecutar Paso 1.5 primero** (ancla A/B/C/D). Si la ancla es clase A (fallo de proceso/BD), completar la auditoría de `ad_pinstance` y la comparación del documento contra hermanos **exitosos** antes de cualquier explicación de flujo posterior (Proformado, Después de entregado, generar albarán, etc.) o de playbook de dominio. La comparación de registros maestros del punto 7 de este paso **no sustituye** esa auditoría cuando el Completar/Registrar/Procesar está fallando con error SQL.
 1. Identificar **síntoma** vs **causa raíz** (no confundir).
 2. Separar **dos capas** cuando ambas existan (obligatorio antes de redactar §7):
    - **Capa negocio / proceso:** documento, flujo o concepto contable incorrecto (ej. devolución de anticipo registrada como cobro negativo en lugar de salida de banco / pago reintegrado con concepto de anticipos).
@@ -548,6 +612,9 @@ En facturas a crédito con cuotas numeradas, la cobranza es secuencial: los abon
 | Recomendar cambiar un campo de configuración distinto al confirmado como causa raíz, solo porque tiene un nombre o propósito parecido (ej. "regla de facturación" del core vs. de otro módulo) | La solución no corrige el mecanismo real; dos campos con nombre similar pueden ser independientes y gobernar comportamientos distintos | Confirmar que el campo propuesto en la sección 6 es el mismo, por nombre exacto de columna, que quedó "Confirmada" en la tabla de hipótesis del punto 4 |
 | Marcar un campo como "Complementaria" o "Informativa" en la tabla de hipótesis (sección 4) y no mencionarlo en §7 | El usuario se queda sin saber que existe una configuración alternativa que también resolvería su caso — puede rechazar la solución principal sin que se le ofrezca la otra vía | Toda fila Complementaria o Informativa pasa a §7 como una opción/punto numerado en "Otras opciones a considerar", en lenguaje llano y con el efecto funcional de activarla, no solo el nombre de la columna |
 | Marcar un campo como "Descartada" porque no explica el síntoma y, por eso, no mencionarlo en §7 aunque gobierne un comportamiento automático del mismo flujo (ej. Completar Albarán / Completar Factura desmarcados en el tipo de documento del caso) | Confunde "no es la causa" con "no le interesa al usuario". El usuario no puede validar una configuración de la que nunca se enteró, y el mismo campo puede ser lo que evite el problema en documentos futuros | Marcarlo **Informativa**, y en §7 indicar qué hace, cómo está hoy, dónde se cambia y que **no** corrige este caso puntual |
+| Tratar un error de proceso/constraint (Paso 1.5 clase A) como "comportamiento esperado del flujo" sin auditar `ad_pinstance` | Confunde el eslabón roto (Completar/Registrar fallido) con el siguiente paso de negocio | Ancla literal → historial de proceso → hermanos exitosos → solo entonces flujo posterior |
+| Equivaler un label de UI ("Tarifa", "Completar") con la columna/proceso del error sin desambiguar homónimos | Diagnóstico sobre el maestro o acción equivocados | Paso 1.5 punto 2: verificar ambos significados en BD/código |
+| Cerrar con "el documento ya está registrado" solo por `docstatus` / estado general cuando el ticket muestra Completar/Registrar fallido | El estado de negocio puede coexistir con fallos repetidos de post | Exigir `ad_pinstance.result` exitoso alineado a la acción reportada |
 
 ### Consultas de viabilidad (§7)
 
@@ -711,4 +778,6 @@ La guía operativa **debe** volver a explorar directamente el repo del cliente (
 
 Cuando esta skill se invoca como motor de diagnóstico del Automation `triage-glpi-auto` (triage de GLPI), aplica una regla adicional de consistencia: si el módulo de profundización de causa raíz de ese orquestador (su Paso 5-B) encuentra un mecanismo o alcance más profundo que el identificado en una primera pasada, ese hallazgo se incorpora a **este mismo documento** (secciones 3, 4, 5 y 9) **antes** de redactar la sección 7 — nunca se genera una segunda sección 7 ni un comentario de corrección aparte para el mismo ticket. El documento y la sección 7 que produce esta skill son, por ticket y por corrida, únicos.
 
-**Esto no reemplaza las obligaciones propias de este motor** (Paso 2 punto 7, Paso 5A puntos 6 y 7): la comparación contra pares, el rastreo del componente exacto, y la validación de cualquier ticket/precedente relacionado se ejecutan siempre como parte de esta skill, sea invocada directamente o a través de `triage-glpi-auto` — no dependen de que el orquestador las repita o las detecte en una pasada separada. El Paso 5-B del orquestador es una capa adicional de consistencia sobre el resultado ya producido aquí, no la única fuente de esa disciplina.
+**Esto no reemplaza las obligaciones propias de este motor** (Paso 1.5, Paso 2 punto 0/7, Paso 5A puntos 6 y 7): la ancla del síntoma literal y la auditoría de fallo de proceso, la comparación contra pares, el rastreo del componente exacto, y la validación de cualquier ticket/precedente relacionado se ejecutan siempre como parte de esta skill, sea invocada directamente o a través de `triage-glpi-auto` — no dependen de que el orquestador las repita o las detecte en una pasada separada. El Paso 5-B del orquestador es una capa adicional de consistencia sobre el resultado ya producido aquí, no la única fuente de esa disciplina.
+
+**Contrato con `triage-glpi-auto` — ancla clase A:** si el ticket trae error SQL/constraint/`ERROR=` al Completar/Registrar/Procesar, el orquestador **debe** haber corrido la auditoría de `ad_pinstance` (Paso 3-B ampliado) antes de permitir score ≥ 90 o cierre como "comportamiento esperado" / flujo posterior (Proformado, generar albarán, etc.). Si esa fila de evidencia queda `OMITIDO` o contradice el cierre, el motor baja confianza y el orquestador aplica el tope de score definido en su Paso 6.1.
