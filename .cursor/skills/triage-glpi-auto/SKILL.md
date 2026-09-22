@@ -266,13 +266,22 @@ WHERE items_id = {ticket_id} AND itemtype = 'Ticket'
 ORDER BY date_creation ASC;
 ```
 
+Traer también las tareas del ticket — la respuesta `ANÁLISIS INICIAL` (score 81–89) se publica como tarea, no como followup, y sin esta consulta el Paso 4.-1 no la detectaría:
+
+```sql
+SELECT id, users_id, content, is_private, actiontime, date_creation
+FROM glpi_tickettasks
+WHERE tickets_id = {ticket_id}
+ORDER BY date_creation ASC;
+```
+
 Si existe la tabla `sidesoft_triage_glpi_log`, revisar también el último registro por `ticket_id` para saber en qué punto del flujo quedó ese ticket en una corrida anterior.
 
 Con ese historial, evaluar en este orden:
 
 ### 4.-1 — Detectar corrida concurrente o duplicada (verificar antes que cualquier otro caso)
 
-Revisar si en el historial recién leído ya existe un comentario `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` o de **Solución al Caso** (canal interno `TRIAGE-RESPUESTA-SUGERIDA` — reconocible por el encabezado visible `SOLUCIÓN AL CASO`, o por el tag literal `[TRIAGE-RESPUESTA-SUGERIDA]` en tickets publicados antes de este cambio de formato) publicado por `bot.glpi` en los **últimos 15 minutos**, sin que exista entre ese comentario y este momento una respuesta nueva del solicitante.
+Revisar si en el historial recién leído ya existe un comentario `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` o de **Solución al Caso** (canal interno `TRIAGE-RESPUESTA-SUGERIDA` — reconocible por el encabezado visible `SOLUCIÓN AL CASO`, o `ANÁLISIS INICIAL` (este último publicado como **tarea** pública en `glpi_tickettasks` cuando el score está entre 81 y 89 — por eso este chequeo debe revisar también las tareas del ticket, ver consulta abajo), o por el tag literal `[TRIAGE-RESPUESTA-SUGERIDA]` en tickets publicados antes de este cambio de formato) publicado por `bot.glpi` en los **últimos 15 minutos**, sin que exista entre ese comentario y este momento una respuesta nueva del solicitante.
 
 - **Existe** → esta corrida es una ejecución concurrente/duplicada del mismo ticket (ej. n8n disparó el Automation dos veces para el mismo evento, o una corrida quedó reintentando). No publicar ningún comentario nuevo, no repetir el análisis ni la respuesta sugerida. Registrar en `sidesoft_triage_glpi_log`: `estado_procesamiento = 'duplicado_abortado'`, referenciando el id del comentario ya existente, y terminar el procesamiento de este ticket en esta corrida.
 - **No existe** → continuar normalmente a 4.0.
@@ -587,9 +596,9 @@ Producto esperado: el documento completo de 9 secciones (Clasificación, Entendi
 
 ---
 
-## Paso 6 — Publicar los comentarios, TODOS PRIVADOS (sin confirmación — ejecución automática)
+## Paso 6 — Publicar los comentarios, PRIVADOS salvo excepciones definidas (sin confirmación — ejecución automática)
 
-Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.glpi`. **Todos los comentarios de este flujo se publican con `is_private = 1` — ninguno es visible para el solicitante/cliente en GLPI**, salvo el comentario CX del Caso Capacitación (Paso 4.0), que se publica con `is_private = 0` por diseño.
+Ejecutar en este orden, vía MCP-DB (`glpi`). `users_id = 148` = usuario `bot.glpi`. **Todos los comentarios de este flujo se publican con `is_private = 1` — ninguno es visible para el solicitante/cliente en GLPI**, salvo dos excepciones por diseño: el comentario CX del Caso Capacitación (Paso 4.0) y la **tarea `ANÁLISIS INICIAL`** (10 minutos, en `glpi_tickettasks`) del Paso 6.3 cuando el score está entre 81 y 89 (> 80 y < 90), ambos con `is_private = 0`.
 
 **Cambio: ya no se publica comentario de "primer contacto".** El flujo pasa directo del análisis al comentario de SLA+Score. Quedan 3 comentarios en total (antes eran 5).
 
@@ -651,7 +660,16 @@ VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_analisis_9_pasos_ht
 
 Evaluar el score de acertividad (calculado en 6.1, sobre la §7 del análisis del Paso 5) para decidir **si se publica un canal adicional** de respuesta/solución. La §7 **ya debe estar** dentro del `[TRIAGE-ANALISIS-9PASOS]` del Paso 6.2 — este paso solo decide si se **copia** ese contenido (o un extracto operativo) a solución/respuesta sugerida.
 
-**Encabezado visible de este canal (no confundir con el nombre interno del paso):** `TRIAGE-RESPUESTA-SUGERIDA` es el nombre interno con el que esta skill identifica este canal (para las reglas de abajo, el Paso 4.-1 y el registro en `sidesoft_triage_glpi_log`), pero **nunca se escribe literalmente entre corchetes dentro del `content` publicado** — ni en `glpi_itilsolutions` ni en `glpi_itilfollowups`. `{comentario_publico_respuesta_formateada}` debe iniciar siempre con el encabezado visible **`SOLUCIÓN AL CASO`** (p. ej. `<b>SOLUCIÓN AL CASO</b>` o `<h3>SOLUCIÓN AL CASO</h3>`, coherente con el HTML del resto del comentario), seguido del contenido operativo de la §7 — nunca el tag `[TRIAGE-RESPUESTA-SUGERIDA]` como texto visible para quien lea el ticket.
+**Encabezado visible de este canal (no confundir con el nombre interno del paso):** `TRIAGE-RESPUESTA-SUGERIDA` es el nombre interno con el que esta skill identifica este canal (para las reglas de abajo, el Paso 4.-1 y el registro en `sidesoft_triage_glpi_log`), pero **nunca se escribe literalmente entre corchetes dentro del `content` publicado** — ni en `glpi_itilsolutions` ni en `glpi_itilfollowups`. `{comentario_publico_respuesta_formateada}` debe iniciar siempre con el encabezado visible que corresponde a su rango de score (p. ej. `<b>...</b>` o `<h3>...</h3>`, coherente con el HTML del resto del comentario), seguido del contenido operativo de la §7 — nunca el tag `[TRIAGE-RESPUESTA-SUGERIDA]` como texto visible para quien lea el ticket.
+
+**Resumen de visibilidad y encabezado por rango de score:**
+
+| Score | Canal | Visibilidad | Encabezado visible |
+|---|---|---|---|
+| >= 90 | Solución del ticket (`glpi_itilsolutions`) | según solución GLPI (esquema actual, sin cambios) | `SOLUCIÓN AL CASO` |
+| 81–89 (> 80 y < 90) | **Tarea** (`glpi_tickettasks`), 10 minutos (`actiontime = 600`) | **Pública** (`is_private = 0`) | `ANÁLISIS INICIAL` |
+| 71–80 | Followup | Privado (`is_private = 1`) | `SOLUCIÓN AL CASO` |
+| <= 70 | No se publica este canal (la §7 queda solo en el `[TRIAGE-ANALISIS-9PASOS]` privado) | — | — |
 
 - **Score >= 90**: el contenido de **Solución al Caso** (canal interno `TRIAGE-RESPUESTA-SUGERIDA`) se aplica como **solución del ticket** (tabla `glpi_itilsolutions`), no como followup. El cambio de `status` a Resuelto y la asignación a kvelasco se aplican en el Paso 6.4, Caso A.
 ```sql
@@ -660,13 +678,17 @@ VALUES ('Ticket', {ticket_id}, 0, '{comentario_publico_respuesta_formateada}', N
 ```
 **Nota:** verificar contra el esquema real de GLPI (`pg_describe_table`/equivalente) los nombres de columna de `glpi_itilsolutions` antes de usar esta skill en producción — igual que `{ID_KVELASCO}`, no confirmado en esta corrección.
 
-- **Score > 80 y < 90**: publicar el mismo contenido como followup privado (`is_private = 1`), con encabezado visible **`SOLUCIÓN AL CASO`** (canal interno `TRIAGE-RESPUESTA-SUGERIDA`). Además, el cambio de `status` a Planificado y la asignación a kvelasco se aplican en el Paso 6.4, Caso A-1.
+- **Score > 80 y < 90 (81–89)**: publicar el mismo contenido como **TAREA del ticket** (tabla `glpi_tickettasks`, no `glpi_itilfollowups`), **PÚBLICA** (`is_private = 0`), visible para el solicitante, con **duración de 10 minutos** (`actiontime = 600`, en segundos) y encabezado visible **`ANÁLISIS INICIAL`** — **nunca** `SOLUCIÓN AL CASO` en este rango, porque el caso todavía requiere intervención de un consultor/técnico para cerrarse (canal interno sigue siendo `TRIAGE-RESPUESTA-SUGERIDA`). En este rango `{comentario_publico_respuesta_formateada}` inicia con `<b>ANÁLISIS INICIAL</b>` (o `<h3>ANÁLISIS INICIAL</h3>`) en lugar de `SOLUCIÓN AL CASO`. Como el solicitante lo va a leer, el contenido debe ser el de la §7 (respuesta al usuario final), en lenguaje claro: sin scripts SQL, sin IDs internos de BD, sin marcadores `[TRIAGE-*]` ni referencias a hipótesis descartadas — ese detalle técnico queda solo en el `[TRIAGE-ANALISIS-9PASOS]` privado. Además, el cambio de `status` a Planificado y la asignación a kvelasco se aplican en el Paso 6.4, Caso A-1.
 ```sql
-INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
-VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
+INSERT INTO glpi_tickettasks (tickets_id, taskcategories_id, date, users_id, users_id_editor, content, is_private, actiontime, state, users_id_tech, groups_id_tech, date_creation, date_mod, timeline_position)
+VALUES ({ticket_id}, 0, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 0, 600, 2, 148, 0, NOW(), NOW(), 1);
 ```
+- `actiontime = 600` → 10 minutos (GLPI guarda la duración de la tarea en segundos). Es fijo para este caso, no se estima por ticket.
+- `state = 2` → tarea **Realizada** (el análisis ya se hizo, no queda como pendiente). `users_id_tech = 148` → el tiempo se imputa a `bot.glpi`, no a un técnico real.
+- **Nota:** verificar contra el esquema real de GLPI (`pg_describe_table` sobre `glpi_tickettasks`, alias `glpi`) los nombres de columna y los valores de `state` antes de usar esta skill en producción — igual que `glpi_itilsolutions` y `{ID_KVELASCO}`, no confirmado en esta corrección.
+- El límite de ~3,2 KB y la verificación con `SELECT` posterior del Paso 6-A aplican igual a esta tabla (verificar contra `glpi_tickettasks`, no contra `glpi_itilfollowups`).
 
-- **Score > 70 y <= 80**: publicar el mismo contenido como followup privado (`is_private = 1`), con encabezado visible **`SOLUCIÓN AL CASO`** (canal interno `TRIAGE-RESPUESTA-SUGERIDA`). El `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1 — un análisis ya publicado nunca deja el ticket en Nuevo.
+- **Score > 70 y <= 80 (71–80)**: publicar el mismo contenido como followup **privado** (`is_private = 1`), con encabezado visible **`SOLUCIÓN AL CASO`** (canal interno `TRIAGE-RESPUESTA-SUGERIDA`). El `status` (Planificado) y la asignación a kvelasco se aplican igual en el Paso 6.4, Caso A-1 — un análisis ya publicado nunca deja el ticket en Nuevo.
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{comentario_publico_respuesta_formateada}', 1, 0, NOW(), NOW(), 1);
@@ -741,7 +763,7 @@ WHERE id = {ticket_id};
 
 El MCP-DB **descarta en silencio** un `INSERT` cuyo `content` supere aproximadamente **3,2 KB**: la herramienta responde `Insert successful ... Last insert ID: N`, el contador de auto-incremento avanza, y la fila nunca queda en la tabla. Confirmado el 2026-08-12 comparando `SELECT MAX(id) FROM glpi_itilfollowups` contra los ids que el log daba por insertados. No es concurrencia entre corridas ni latencia de réplica.
 
-Por eso, para **cada** `INSERT` de este flujo (`glpi_itilfollowups` y `sidesoft_triage_glpi_log`):
+Por eso, para **cada** `INSERT` de este flujo (`glpi_itilfollowups`, `glpi_tickettasks` y `sidesoft_triage_glpi_log`):
 
 1. Mantener el `content` por debajo de ~3,2 KB — dividir en varios followups si hace falta (ver 6.2).
 2. Insertar.
@@ -818,7 +840,7 @@ No fue ejecutado automáticamente.
 
 **Si el cambio lo puede hacer el usuario por interfaz:** no sustituir el script por la UI cuando el dato esté roto a nivel técnico (ej. PSD con BP null no editable en pantalla). En cambio, si la vía correcta es operativa/configuración editable: priorizar esa vía en la **§7** (ventana + pasos) y, si aplica, dejar el script solo como respaldo en §5/§6.
 
-Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GLPI (`glpi_itilfollowups`, `sidesoft_triage_glpi_log`) — nunca sobre la base de datos de producción del ERP del cliente.
+Este flujo automático **solo ejecuta escritura** sobre las tablas propias de GLPI (`glpi_itilfollowups`, `glpi_tickettasks`, `sidesoft_triage_glpi_log`) — nunca sobre la base de datos de producción del ERP del cliente.
 
 Si el Paso 5-B, punto 7, determinó que la corrección tiene una Fase 1 (puntual) y una Fase 2 (masiva), publicar ambas por separado dentro del mismo bloque, cada una con su propio encabezado (`Fase 1 — corrección puntual` / `Fase 2 — corrección masiva, no ejecutar sin revisión`) y el número de registros afectados obtenido en el Paso 5-B, punto 5. Nunca fusionar ambas fases en un único script sin distinguirlas — el volumen alto de la Fase 2 es justamente lo que exige revisión y ejecución por lotes, no ejecución directa.
 
@@ -843,6 +865,8 @@ VALUES
    '{json_de_la_clasificacion_completa}', '{ok_o_error}', {detalle_error_o_null});
 ```
 
+Con score 81–89, `followup_publico_solucion_id` lleva el id de la **tarea** `ANÁLISIS INICIAL` (`glpi_tickettasks.id`), y `respuesta_modelo_raw` debe indicar `"canal_respuesta": "tarea"` para distinguirlo de un id de `glpi_itilfollowups`.
+
 Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registrado`, `preguntas_enviadas`, `esperando_respuesta_cliente`, `ok_alta_confianza` (score >= 80), `ok_baja_confianza` (score < 80), `error`.
 
 ---
@@ -856,7 +880,8 @@ Valores posibles de `estado_procesamiento`: `capacitacion`, `proyecto_no_registr
 - Nunca aplicar el comentario de **Solución al Caso** (canal interno `TRIAGE-RESPUESTA-SUGERIDA`) como solución del ticket (6.3) si el score de acertividad es menor a 90. Nunca publicar el comentario de respuesta como followup (6.3) si el score es 70 o menor.
 - Nunca omitir la **sección 7** del `[TRIAGE-ANALISIS-9PASOS]` porque el score sea bajo o porque no se vaya a publicar triage de respuesta/solución — el score solo condiciona el canal 6.3, no la completitud del análisis.
 - Nunca cerrar un plan que exija cambio de datos en el ERP sin **adjuntar el script SQL sugerido** (o plantilla con placeholders) en las secciones 5/6 del análisis. Si el usuario puede hacerlo por interfaz, la §7 (y el triage de respuesta/solución cuando aplique) debe indicar ventana y pasos — no solo "corregir en el sistema".
-- Todos los comentarios publicados por este flujo son privados (`is_private = 1`), con una única excepción: el comentario CX del Caso Capacitación (Paso 4.0), que se publica público (`is_private = 0`) porque va dirigido al solicitante. Fuera de ese caso, ninguno llega al solicitante dentro de GLPI.
+- Todos los comentarios publicados por este flujo son privados (`is_private = 1`), con dos únicas excepciones públicas (`is_private = 0`) porque van dirigidos al solicitante: el comentario CX del Caso Capacitación (Paso 4.0) y la tarea `ANÁLISIS INICIAL` del Paso 6.3 con score > 80 y < 90. Fuera de esos casos, ninguno llega al solicitante dentro de GLPI.
+- Nunca publicar con encabezado `SOLUCIÓN AL CASO` una respuesta de score > 80 y < 90 — en ese rango se publica siempre como **tarea** (`glpi_tickettasks`), pública, con 10 minutos (`actiontime = 600`) y encabezado `ANÁLISIS INICIAL`, nunca como followup. Nunca publicar como público un followup de respuesta con score <= 80 — en ese rango es siempre privado (`SOLUCIÓN AL CASO`, solo si el score es > 70). El esquema de score >= 90 (solución del ticket, `SOLUCIÓN AL CASO`) no cambia.
 - Nunca clonar un repo de cliente — siempre leer vía MCP de GitHub, archivo por archivo.
 - Nunca procesar un ticket cuyo proyecto no esté en `registro_clientes/clientes.json`.
 - Nunca ejecutar (solo sugerir como texto) cualquier `INSERT`/`UPDATE`/`DELETE`/`DDL` sobre la BD de producción del ERP de un cliente — misma disciplina SQL de `openbravo-functional-ticket-analysis` (Paso 3), aplicada en modo automático.
