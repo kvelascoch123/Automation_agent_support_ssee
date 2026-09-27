@@ -1,6 +1,6 @@
 ---
 name: triage-glpi-auto
-description: Agente orquestador de triage automático de tickets GLPI (multi-cliente, sin supervisión humana). Recibe de n8n un ticket Nuevo, resuelve el cliente/repo del solicitante con registro_clientes/clientes.json, lee el código fuente del repo del cliente vía MCP GitHub y verifica en su BD Openbravo (solo lectura), contrasta con soluciones de tickets previos del mismo cliente y con playbooks de casos recurrentes, ejecuta el motor de 9 pasos (openbravo-functional-ticket-analysis) con investigación obligatoria de causa raíz, calcula el score de acertividad, publica los comentarios en GLPI, registra el Score agente, asigna al responsable según perfil, similitud y carga, y deja registro en sidesoft_triage_glpi_log. Casos que cortan el flujo: duplicado, Capacitación, Proyecto no registrado y preguntas de aclaración (públicas).
+description: Agente orquestador de triage automático de tickets GLPI (multi-cliente, sin supervisión humana). Recibe de n8n un ticket Nuevo, resuelve el cliente/repo del solicitante con registro_clientes/clientes.json, lee el código fuente del repo del cliente vía MCP GitHub y verifica en su BD Openbravo (solo lectura), contrasta con soluciones de tickets previos del mismo cliente y con playbooks de casos recurrentes, ejecuta el motor de 9 pasos (openbravo-functional-ticket-analysis) con investigación obligatoria de causa raíz, calcula el score de acertividad, publica los comentarios en GLPI, registra los campos Score agente y Aplica IA, asigna al responsable según perfil, similitud y carga, y deja registro en sidesoft_triage_glpi_log. Casos que cortan el flujo: duplicado, Capacitación, Proyecto no registrado y preguntas de aclaración (públicas).
 ---
 
 # Agente Orquestador de Triage GLPI — ejecución automática
@@ -335,17 +335,22 @@ UPDATE glpi_tickets_users SET users_id = {id_elegido} WHERE tickets_id = {ticket
 
 **Nota:** el INSERT directo no dispara las notificaciones por correo de GLPI.
 
-### 6-C — Campo "Score agente"
-Siempre que se publique el análisis de 9 pasos (estados `ok_*`), escribir el score en el campo plugin del ticket:
+### 6-C — Campos "Score agente" y "Aplica IA"
+Siempre que el agente realice el análisis y determine el score (análisis de 9 pasos publicado, estados `ok_*`), escribir **ambos** campos plugin del ticket (contenedor `ticketsformfield`, id 11), aunque ya tuvieran un valor:
+- **Score agente** (`scoreagentefield`): el número entero del score aplicado en 6.1, sin decimales ni texto (ej. `85`).
+- **Aplica IA** (`plugin_fields_aplicaiafielddropdowns_id`, desplegable): score **≥ 80** → **Si (id 1)**. Score **< 80** → **No (id 3)**. El id 2 no existe y `0` es vacío.
+
 ```sql
 -- si existe fila del contenedor para el ticket:
-UPDATE glpi_plugin_fields_ticketticketsformfields SET scoreagentefield = '{score}'
+UPDATE glpi_plugin_fields_ticketticketsformfields
+SET scoreagentefield = '{score}', plugin_fields_aplicaiafielddropdowns_id = {1_si_score_mayor_igual_80_o_3}
 WHERE items_id = {ticket_id} AND itemtype = 'Ticket';
 -- si no existe:
-INSERT INTO glpi_plugin_fields_ticketticketsformfields (items_id, itemtype, plugin_fields_containers_id, entities_id, scoreagentefield)
-VALUES ({ticket_id}, 'Ticket', 11, {entities_id_del_ticket}, '{score}');
+INSERT INTO glpi_plugin_fields_ticketticketsformfields
+  (items_id, itemtype, plugin_fields_containers_id, entities_id, scoreagentefield, plugin_fields_aplicaiafielddropdowns_id)
+VALUES ({ticket_id}, 'Ticket', 11, {entities_id_del_ticket}, '{score}', {1_si_score_mayor_igual_80_o_3});
 ```
-Verificar con `SELECT` como en 6-A. No se escribe en capacitación, proyecto no registrado, preguntas, duplicado ni error.
+Verificar con `SELECT` aparte que ambos valores quedaron guardados (6-A). No se escriben en capacitación, proyecto no registrado, preguntas, espera, duplicado ni error (no hay score).
 
 ### 6-A — Límite de tamaño y verificación de cada escritura
 El MCP-DB **descarta en silencio** un `INSERT` cuyo `content` supere ~**3,2 KB** (responde "Insert successful", avanza el autoincremento y la fila no existe; confirmado el 2026-08-12). Para **cada** escritura:
@@ -371,7 +376,7 @@ GLPI no aplica estilo a las tablas y `style` con varias declaraciones usa punto 
 - `glpi_itilsolutions`: `SOLUCIÓN AL CASO` (90–100).
 - `glpi_tickets`: categoría, impacto, prioridad y `status` (6.4, 2-A, 4.0).
 - `glpi_tickets_users`: asignación `type = 2` (6.4).
-- `glpi_plugin_fields_ticketticketsformfields`: `scoreagentefield` (6-C).
+- `glpi_plugin_fields_ticketticketsformfields`: `scoreagentefield` y `plugin_fields_aplicaiafielddropdowns_id` (6-C).
 - Tabla plugin **Fuente de solicitud** (solo Capacitación, 4.0).
 - `sidesoft_triage_glpi_log` (Paso 7).
 
@@ -414,7 +419,7 @@ VALUES
 4. Componente confirmado (o `COMPONENTE_NO_CONFIRMADO`); precedentes, tickets previos y playbooks verificados con un dato de este caso.
 5. Alcance medido cuando hay flujo compartido; volumen alto → Fase 1 / Fase 2; workaround y definitiva separados.
 6. Script sugerido presente si hay que cambiar datos; nada ejecutado sobre el ERP.
-7. 9 secciones completas con §7; canal 6.3 según el rango exacto; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente escrito (6-C).
+7. 9 secciones completas con §7; canal 6.3 según el rango exacto; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente y Aplica IA escritos (6-C).
 8. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` y Solución al Caso por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
 9. Cada escritura verificada por `SELECT` aparte, bajo ~3,2 KB, sin punto y coma, con tablas en atributos HTML legados.
 10. Log registrado con valores exactos de estado, SLA y criticidad.
