@@ -12,7 +12,7 @@ description: >-
 
 # Análisis de tickets funcionales Openbravo
 
-**Versión de la skill:** `motor-2026-09-29` (el orquestador la registra en su log).
+**Versión de la skill:** `motor-2026-09-29.2` (el orquestador la registra en su log).
 
 ## Activación
 
@@ -27,6 +27,8 @@ Toda afirmación del documento se apoya en una fuente abierta **en esta corrida*
 **Jerarquía de fuentes:** lo que está **desplegado** vive en la BD del cliente (funciones y triggers PL/SQL, Application Dictionary, traducciones es_ES, valores de configuración); el repo del cliente es la fuente para Java, reportes (jrxml) y para ubicar módulos. Si repo y BD difieren en un objeto PL/SQL o de diccionario, **manda la BD** y se declara `REPO_DESACTUALIZADO` (Paso 5A.0).
 
 **Objetivo de la respuesta:** que el usuario final pueda corregir o verificar el caso sin volver a preguntar: ventana con ruta completa, campo con su etiqueta en pantalla, valor exacto, orden de pasos, cómo comprobar que quedó resuelto y qué hacer si no.
+
+**Hallazgo, no eco:** la respuesta nunca devuelve como hallazgo lo que el usuario ya reportó. El valor del análisis es el **mecanismo**: qué dato, configuración o lógica concreta de esta transacción (o de las relacionadas) produce el síntoma, demostrado con código y BD. Un workaround ("use otro documento", "verifique después de recalcular") nunca sustituye al mecanismo. Si el análisis solo alcanza a describir el síntoma, el mecanismo no está identificado y se declara así (Paso 2.9).
 
 ## Detección de subtipo (obligatorio)
 
@@ -78,9 +80,10 @@ Del texto, captura o `Detalles Adicionales:` fijar **una** ancla:
 | **A. Fallo de proceso/BD** | `violates … constraint`, `ERROR=`, `@ERROR=`, stack SQL, error rojo al Completar/Registrar/Procesar/Contabilizar/Generar | Máxima: auditar el proceso fallido **antes** de explicar estados o flujo |
 | **B. Mensaje de negocio** | `@…@`, popup de validación, "no se puede…" | Alta: localizar validación/trigger/mensaje en código |
 | **C. Confusión de estado/flujo** | "está Proformado", "no avanza", sin error | Media: explicar regla solo tras confirmar que el Completar/Registrar no falló |
+| **E. Resultado incorrecto sin error** | El proceso responde exitoso pero deja valores o registros incorrectos: importes duplicados o multiplicados, líneas repetidas, totales que no cuadran, registros generados de más o de menos | Alta: reproducir el mecanismo (Paso 2.9) antes de proponer cualquier workaround |
 | **D. Sin ancla** | "no funciona" | Volver a 0-A |
 
-**Regla dura:** si coexisten A y C, manda **A**; prohibido cerrar solo con la explicación de C.
+**Regla dura:** si coexisten A y C, manda **A**; prohibido cerrar solo con la explicación de C. Si coexisten A y E, manda **A** (un fallo registrado explica mejor un resultado incorrecto), y luego se verifica si E persiste en ejecuciones exitosas.
 
 **Mensaje de negocio (clase B) — localizarlo por BD primero:** buscar el texto o la clave `@…@` en `ad_message` / `ad_message_trl` (columna `msgtext`, `value`) para obtener la clave exacta y el módulo dueño; luego buscar esa clave en funciones, triggers (Paso 5A.0) y en el repo. Un mensaje no localizado se declara en §9.
 
@@ -116,6 +119,13 @@ Del texto, captura o `Detalles Adicionales:` fijar **una** ancla:
    - **"Antes funcionaba":** además de pares, buscar cambios recientes en el maestro o en el objeto de código: `updated`/`updatedby` del registro maestro, y fecha de modificación del objeto en el diccionario (`ad_column.updated`, `ad_process.updated`) o del módulo (`ad_module.version`). Un cambio con fecha anterior al primer fallo es candidato fuerte.
    - Sin BD: no cerrar como "comportamiento esperado"; declarar la comparación pendiente en §9 y bajar confianza.
 8. **Impacto del cambio propuesto:** si la solución cambia un maestro, parámetro o fórmula, medir antes qué más usa ese registro (ej. cuántos documentos/organizaciones usaron ese tipo de documento en los últimos 6 meses, qué otros conceptos referencian esa fórmula). Resultado en §5.D y, si afecta a otros procesos del usuario, advertencia en §7 → **Importante**.
+9. **Reproducción del mecanismo** (obligatoria con ancla E y en toda causa de cálculo o de generación de registros). El objetivo es poder decir *qué* en esta transacción produce el valor incorrecto, no solo *que* ocurre:
+   1. **Cadena del proceso:** botón o acción → `ad_process` (o callout/evento) → clase Java, función o trigger que calcula o inserta (Paso 5A.6, con BD primero 5A.0). Leer la lógica exacta: qué filas lee, qué suma o multiplica, qué inserta y **si borra o reemplaza lo generado antes**. Causas típicas de duplicados: re-ejecutar inserta de nuevo sin limpiar lo anterior, un trigger que suma sobre filas ya generadas, una línea de cargo (financiamiento, interés, entrada) que se agrega en cada ejecución, o una fila hija duplicada que la lógica suma dos veces.
+   2. **Entradas del cálculo:** listar las tablas y columnas que esa lógica lee (cabecera, líneas, plan de pagos o amortización, satélites `em_*`, maestros y parámetros de configuración que intervienen).
+   3. **Caso KO vs casos OK:** consultar esas entradas en el documento afectado y en 2–5 documentos hermanos donde el mismo proceso sí dio el resultado correcto. El propio ticket o la BD suelen nombrarlos (mismo tercero, producto, tipo de documento o fecha). Revisar como mínimo: número de filas hijas por tipo y duplicados (`GROUP BY … HAVING COUNT(*) > 1`), filas generadas por el proceso (`created`, `createdby`, marcas de línea generada), valores de configuración que la lógica consulta, y ejecuciones del proceso en `ad_pinstance` (cuántas y con qué separación, para detectar doble ejecución o doble clic).
+   4. **Simulación:** recalcular por SQL, con las entradas del caso KO, el valor que produciría la lógica leída. Si reproduce el valor incorrecto (ej. 8439 en vez de 4219), el mecanismo queda **confirmado** y se sabe qué entrada lo causa. Si no lo reproduce, repetir con la siguiente diferencia KO vs OK; si ninguna lo reproduce, el mecanismo queda sin confirmar.
+   5. **Resultado:** `Mecanismo confirmado: Sí/No` en §4, con la condición concreta. Ejemplos: "la línea de financiamiento quedó registrada dos veces y el recálculo suma ambas", "el proceso no elimina el plan de amortización anterior antes de regenerarlo", "el parámetro X del tipo de documento hace que el cargo se aplique dos veces". Con `No`, §9 lista qué faltó (ej. clase Java no localizada) y la confianza baja.
+   - **Anti-patrón:** cerrar con "no use ese documento, use otro" o "verifique el valor después de recalcular" sin explicar qué condición distingue a los documentos que fallan de los que funcionan. Eso es un workaround, no un diagnóstico.
 
 **7-bis. Enumeración exhaustiva de candidatos (previa a comparar):** identificar la tabla maestra; con BD, ejecutar `pg_describe_table` o `SELECT column_name FROM information_schema.columns WHERE table_name = '<tabla>'` y listar **todas** las columnas `EM_*`. Es independiente del repo y es la **única fuente válida** si el repo no es accesible. La lista completa es evidencia de 5D; si hay 2+ columnas plausibles, se comparan todas. Aplica a cualquier tabla maestra y dominio.
 - **Relación funcional (para decidir qué columnas llevan fila propia en la tabla de hipótesis):** una columna `EM_*` es *relacionada* si su módulo es el mismo del flujo afectado, si aparece en el código (función, trigger, clase, callout) del proceso que falla o del proceso esperado, o si su nombre/descripción en `ad_column`/`ad_element` alude a la acción del síntoma. Las relacionadas se comparan contra hermanos **siempre**. Las no relacionadas se listan en 5D y se agrupan en una sola fila (ver Paso 4).
@@ -172,6 +182,7 @@ Dominio no claro → declararlo en §9 y bajar confianza. Los nombres de módulo
 - **Causa estructural:** por qué el sistema permitió que ocurriera sin corregirse (ej. un módulo custom que no replica una sincronización del estándar).
 - Tipo de causa (una sola vez, en el nivel que corresponda): configuración faltante/incorrecta · estado del documento · restricción de negocio del sistema · dato del cliente erróneo · bug real (último recurso).
 - Si la conclusión es "no hay error"/"comportamiento esperado": citar el resultado de la comparación contra pares (Paso 2.7), campo por campo.
+- **Mecanismo confirmado: Sí/No** — la condición concreta (dato, configuración o lógica) que produce el síntoma en esta transacción y cómo se demostró (Paso 2.9 o auditoría 1.5). La causa inmediata nunca puede ser una reformulación del síntoma ("el recálculo duplica el importe" es síntoma, no causa).
 
 **Tabla de hipótesis** (obligatoria si la causa candidata es un maestro/configuración): Hipótesis | Campo (nombre exacto de columna) | Evidencia (caso vs pares) | Resultado | Estado.
 - **Confirmada / Descartada** según evidencia.
@@ -199,10 +210,10 @@ Mismas 9 secciones: §1 Tipo, Subtipo, Dominio, Confianza, ¿desarrollo? · §2 
 **A. Incidencia** (lenguaje de negocio; si hay dos capas, primero el error de proceso y después el efecto visible; con sub-casos, repetir los bloques por problema numerado):
 
 ```markdown
-En el análisis del caso se identifica que [qué pasó y qué impide cerrar la operación].
+En el análisis del caso se identifica que [la causa encontrada, no el síntoma reportado].
 
 **Qué se identificó**
-[1–2 oraciones: documento/movimiento implicado + síntoma en pantalla.]
+[La causa en lenguaje de negocio: qué condición concreta de esta transacción, de las transacciones relacionadas o de la configuración produce el problema, y cómo se comprobó (ej. "comparando con las cotizaciones que sí calculan bien, esta tiene X que aquellas no tienen"). El síntoma que reportó el usuario, si se menciona, va en media línea como referencia y nunca como hallazgo.]
 
 **Por qué está mal**
 1. [Error de proceso o documento.]
@@ -215,6 +226,7 @@ En el análisis del caso se identifica que [qué pasó y qué impide cerrar la o
 Paso 1 — Ingrese a **[Menú > Submenú > Ventana]** y [acción].
 Paso 2 — En el campo **[etiqueta en pantalla]**, cambie el valor de **[valor actual]** a **[valor nuevo exacto]**. [Si es una acción sobre un documento: nº de documento y botón exacto.]
 Paso 3 — [...]
+[Los pasos corrigen **la causa identificada** (quitar la línea duplicada, cambiar el parámetro, que el técnico aplique el ajuste). Si además existe un workaround mientras se corrige, va en un bloque aparte titulado "Mientras se aplica la corrección", nunca como única solución.]
 
 **Cómo verificar que quedó resuelto**
 - [Acción concreta y resultado visible esperado, ej. "Complete nuevamente el pedido N y confirme que se genera el albarán".]
@@ -251,7 +263,7 @@ Respecto a su consulta sobre [operación]:
 - [Qué evitar.]
 ```
 
-**Reglas de §7 (ambos subtipos):** nombrar la **ruta de menú completa** confirmada en 5C cuando la solución sea una acción en pantalla — si no se confirmó, declararlo en §9, nunca inventarla ni decir "consulte a su consultor" · campos por su **etiqueta en pantalla** confirmada (`ad_field_trl`/`ad_element_trl`), nunca por nombre de columna · todo cambio de valor con **valor actual y valor nuevo exacto** (fórmulas completas, no "agregar X") · si la causa es una regla de configuración (aun "comportamiento esperado"), decir **dónde se configura** · toda frase "alineado con X"/"comportamiento esperado" debe corresponder a una hipótesis Descartada con **todas** sus columnas relacionadas probadas · el bloque de acciones se titula siempre **"Solución a aplicar o verificar"** · incluir siempre **"Cómo verificar que quedó resuelto"** (o "Cómo comprobar el resultado" en viabilidad) y, en incidencia, **"Si después de aplicarlo el problema continúa"** · en viabilidad, sin lista "Detalle por capacidad" (la matriz va en §3–5) · cerrar con **Importante** breve; nunca escalar a soporte como única salida · si el usuario necesita el paso a paso en pantalla, invitar a **GUIA OPERATIVA** · **única excepción a "sin tablas ni columnas":** cuando el ticket pide expresamente la estructura de BD (tablas/columnas de una ventana), esos nombres, confirmados en el esquema del cliente, son la respuesta y van en §7.
+**Reglas de §7 (ambos subtipos):** nombrar la **ruta de menú completa** confirmada en 5C cuando la solución sea una acción en pantalla — si no se confirmó, declararlo en §9, nunca inventarla ni decir "consulte a su consultor" · campos por su **etiqueta en pantalla** confirmada (`ad_field_trl`/`ad_element_trl`), nunca por nombre de columna · todo cambio de valor con **valor actual y valor nuevo exacto** (fórmulas completas, no "agregar X") · si la causa es una regla de configuración (aun "comportamiento esperado"), decir **dónde se configura** · toda frase "alineado con X"/"comportamiento esperado" debe corresponder a una hipótesis Descartada con **todas** sus columnas relacionadas probadas · el bloque de acciones se titula siempre **"Solución a aplicar o verificar"** · incluir siempre **"Cómo verificar que quedó resuelto"** (o "Cómo comprobar el resultado" en viabilidad) y, en incidencia, **"Si después de aplicarlo el problema continúa"** · en viabilidad, sin lista "Detalle por capacidad" (la matriz va en §3–5) · cerrar con **Importante** breve; nunca escalar a soporte como única salida · si el usuario necesita el paso a paso en pantalla, invitar a **GUIA OPERATIVA** · **única excepción a "sin tablas ni columnas":** cuando el ticket pide expresamente la estructura de BD (tablas/columnas de una ventana), esos nombres, confirmados en el esquema del cliente, son la respuesta y van en §7 · **prueba de no repetición:** si "Qué se identificó" y "Por qué está mal" se podrían escribir solo con el texto del ticket, la §7 no es válida porque falta el mecanismo (Paso 2.9). Se rehace con el mecanismo o, si no se confirmó, se dice en lenguaje llano qué se revisó y descartó, qué condición queda por confirmar y quién la revisará. En ningún caso se presenta como hallazgo lo que el usuario ya dijo.
 
 ---
 
@@ -314,6 +326,7 @@ Archivos por módulo: `01-Facturacion-Electronica`, `02-Retenciones`, `03-Pagos-
 - Código desplegado en BD vs repo: IGUAL / `REPO_DESACTUALIZADO` / SOLO BD / SOLO REPO, por objeto relevante.
 - Ventana/proceso UI confirmado: ruta de menú completa y etiqueta de campo, y la fuente (BD `_trl` o repo).
 - Columnas `EM_*` enumeradas (7-bis): total, relacionadas (comparadas una a una) y no relacionadas (listadas), y resultado de la comparación contra pares, o por qué no hay conjunto comparable.
+- Mecanismo (Paso 2.9): confirmado Sí/No, cadena del proceso leída, entradas comparadas KO vs OK (qué documentos) y resultado de la simulación (valor calculado vs valor observado).
 - Impacto del cambio propuesto (Paso 2.8): número de registros/procesos afectados y consulta usada, o "no aplica" con motivo.
 - Matriz completa: referenciar la de §4 (cuántos registros y campos), sin repetirla.
 
@@ -326,6 +339,6 @@ Para el paso a paso en pantalla: **GUIA OPERATIVA** / **CREA FLUJO** → skill `
 ## Uso desde `triage-glpi-auto`
 
 - El documento de 9 secciones y su §7 son **únicos por ticket y corrida**: cualquier profundización (Paso 5-B del orquestador) se incorpora aquí **antes** de redactar §7, nunca como segunda versión ni comentario de corrección.
-- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
+- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
 - **Contrato ancla A:** con error SQL/constraint/`ERROR=` al Completar/Registrar/Procesar, la auditoría de `ad_pinstance` debe estar hecha antes de permitir score ≥ 90 o un cierre como "comportamiento esperado"; si queda `OMITIDO` o contradice el cierre, se baja confianza y el orquestador aplica el tope de score (su Paso 6.1).
-- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7 y sub-casos.
+- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7, sub-casos, mecanismo confirmado y si la §7 aporta un hallazgo distinto del síntoma reportado.

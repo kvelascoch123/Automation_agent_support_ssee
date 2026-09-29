@@ -5,7 +5,7 @@ description: Agente orquestador de triage automático de tickets GLPI (multi-cli
 
 # Agente Orquestador de Triage GLPI — ejecución automática
 
-**Versión de la skill:** `triage-2026-09-29` (se registra en el log junto a la versión del motor).
+**Versión de la skill:** `triage-2026-09-29.2` (se registra en el log junto a la versión del motor).
 
 Corre sin intervención humana y sin pedir confirmación. Está vinculado al **repo orquestador**; los repos de código de cada cliente se leen dinámicamente vía **MCP GitHub**.
 
@@ -240,7 +240,8 @@ Tabla obligatoria en §9 — `LEÍDO` solo vale con un dato concreto obtenido en
 | `Detalles Adicionales:` (3-A) | LEÍDO / SIN IMÁGENES | identificadores usados o motivo de no viable |
 | BD del ERP (3-B) | LEÍDO / NO DISPONIBLE | resultado del SELECT o motivo; `null` anómalos detectados |
 | `ad_pinstance` (3-B.4) | AUDITADO / NO APLICA / OMITIDO / NO DISPONIBLE | process, result, errormsg, fecha. `NO APLICA` solo si el ancla no es A. `OMITIDO` con ancla A bloquea score ≥ 90 |
-| Ancla del síntoma | A / B / C / D | clase + fragmento literal |
+| Ancla del síntoma | A / B / C / D / E | clase + fragmento literal |
+| Mecanismo reproducido (motor 2.9) | CONFIRMADO / NO CONFIRMADO / NO APLICA | condición concreta, documentos KO vs OK comparados y valor simulado vs observado |
 | Tickets previos del cliente (3-D) | VERIFICADO / SIN CANDIDATOS / NO APLICABLE | ids, efectividad, dato verificado y validación IA |
 | Playbook (3-E) | APLICADO / NO APLICA | nombre del playbook |
 | Comparación contra pares (5-B.1) | COMPARADO / SIN PARES | registros y resultado, o motivo |
@@ -252,7 +253,7 @@ Tabla obligatoria en §9 — `LEÍDO` solo vale con un dato concreto obtenido en
 
 Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpora al mismo documento (§3, §4, §5, §8, §9) y a la única §7. Nunca un comentario de corrección posterior.
 
-1. **No cerrar en la primera causa plausible:** preguntarse qué otra cosa produciría el mismo síntoma y evaluarla antes de fijar la causa. Aplica también a "no hay error"/"comportamiento esperado": la consistencia interna de un registro no prueba que esté bien configurado frente a sus pares. La comparación contra pares (motor Paso 2.7 y 7-bis) es **siempre obligatoria** en este flujo (hay BD disponible), cubriendo tantos escenarios comparables como sea razonable, y su profundidad se refleja en el score. Con ancla A, primero la auditoría `ad_pinstance`; la comparación de maestros va después y nunca la sustituye. Si datos ausentes en una ventana podrían venir de una integración externa, evaluar esa sincronización como hipótesis, verificándola en código/BD (ej. usuario creador, proceso o servicio que genera esos registros), antes de concluir "falta de registro manual". Si el síntoma es "antes funcionaba", buscar cambios recientes en maestros y código (motor Paso 2.7).
+1. **No cerrar en la primera causa plausible:** preguntarse qué otra cosa produciría el mismo síntoma y evaluarla antes de fijar la causa. Aplica también a "no hay error"/"comportamiento esperado": la consistencia interna de un registro no prueba que esté bien configurado frente a sus pares. La comparación contra pares (motor Paso 2.7 y 7-bis) es **siempre obligatoria** en este flujo (hay BD disponible), cubriendo tantos escenarios comparables como sea razonable, y su profundidad se refleja en el score. Con ancla A, primero la auditoría `ad_pinstance`; la comparación de maestros va después y nunca la sustituye. Si datos ausentes en una ventana podrían venir de una integración externa, evaluar esa sincronización como hipótesis, verificándola en código/BD (ej. usuario creador, proceso o servicio que genera esos registros), antes de concluir "falta de registro manual". Si el síntoma es "antes funcionaba", buscar cambios recientes en maestros y código (motor Paso 2.7). Con **ancla E** (resultado incorrecto sin error) o cualquier causa de cálculo o de generación de registros, es obligatoria la reproducción del mecanismo del motor (Paso 2.9): leer la lógica del proceso, comparar el documento que falla contra los que funcionan (incluidos los que el propio ticket o el análisis mencionan) y simular el cálculo hasta reproducir el valor incorrecto.
 2. **Trazabilidad:** Usuario → origen del dato → proceso funcional → backend (función/trigger/servicio) → BD → registro → resultado. Identificar el eslabón roto y distinguir error visible, error técnico y causa raíz. Señalar cuando el flujo pasa por un módulo custom en vez del estándar. El eslabón backend se llena solo con el componente confirmado (motor 5A.6), preferentemente en su versión desplegada.
 3. **Tabla de hipótesis y descarte** (en §9, respaldo de §4): Hipótesis | Campo (columna exacta o N/A) | Evidencia | Cómo se validó | Resultado | Estado. Reglas anti-colapso, de agrupación de `EM_*` no relacionadas y de precedentes: las del motor (Paso 4 y 5A.7).
 4. **Cuatro niveles de causa** en §4 (plantilla nativa del motor).
@@ -261,6 +262,7 @@ Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpo
 7. **Impacto y fases** antes de sugerir corrección de datos o de configuración: procesos afectados (POS, ventas, reportes, contabilidad, integraciones) y número medido (motor Paso 2.8). Volumen alto → **Fase 1 puntual** (registros del ticket, con transacción y respaldo) y **Fase 2 masiva** (por lotes, marcada "no ejecutar sin revisión"), cada una con su número de registros.
 8. **Validación de la solución** en §5: qué volver a consultar (ej. repetir la consulta de alcance) y qué caso borde revisar.
 9. **Verificación para el usuario en §7:** la solución incluye cómo comprobar que quedó resuelto y qué responder si no funciona (plantilla del motor). Sin esto, el análisis no pasa el gate (5-C).
+10. **Hallazgo distinto del síntoma:** la §7 debe comunicar la causa encontrada (condición concreta de datos, configuración o lógica que no estaba en el texto del ticket) y la corrección de esa causa. Repetir lo que el usuario reportó y ofrecer solo un workaround no es un análisis y no pasa el gate (5-C).
 
 **Campos del motor, sin fusionar:** *Tipo de caso* (Operativo / Configuración / Integración / Bug / Infraestructura) y *Causa raíz* (vocabulario de §4, declarado una sola vez). Citar por nombre cualquier caso de `casos_de_uso_openbravo_erp.md` que aplique.
 
@@ -273,15 +275,16 @@ Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpo
 Antes de publicar, armar el bloque de evidencia (JSON compacto, sin punto y coma) con lo que el documento **realmente** contiene:
 
 ```json
-{"version_skill":"triage-2026-09-29/motor-2026-09-29","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
+{"version_skill":"triage-2026-09-29.2/motor-2026-09-29.2","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
  "ancla":"C","ad_pinstance":"NO APLICA","codigo":"LEIDO","repo_vs_bd":"IGUAL","componente_confirmado":true,"componente_fuente":"BD",
  "causa_en_maestro":true,"comparacion_pares":"COMPARADO","cierre_comportamiento_esperado":false,
+ "mecanismo_confirmado":true,"hallazgo_distinto_al_sintoma":true,
  "accion_en_pantalla":true,"ruta_menu_confirmada":true,"requiere_cambio_datos":false,"script_incluido":false,
  "verificacion_en_s7":true,"secciones_completas":true,"score_propuesto":92,"score_final":92,
  "gate_resultado":"aprobado","gate_reglas":[]}
 ```
 
-Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura/Viabilidad · `codigo` = estado de la fila de código de 5-EVIDENCIA · `repo_vs_bd` ∈ IGUAL/REPO_DESACTUALIZADO/SOLO_BD/SOLO_REPO/NO_APLICA · `componente_fuente` ∈ BD/REPO/AMBOS/NO_APLICA · `comparacion_pares` ∈ COMPARADO/SIN PARES/PENDIENTE.
+Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura/Viabilidad · `codigo` = estado de la fila de código de 5-EVIDENCIA · `repo_vs_bd` ∈ IGUAL/REPO_DESACTUALIZADO/SOLO_BD/SOLO_REPO/NO_APLICA · `componente_fuente` ∈ BD/REPO/AMBOS/NO_APLICA · `comparacion_pares` ∈ COMPARADO/SIN PARES/PENDIENTE · `mecanismo_confirmado` = el motor reprodujo o demostró la condición que produce el síntoma (Paso 2.9 o auditoría 1.5) · `hallazgo_distinto_al_sintoma` = la §7 contiene al menos una condición concreta (dato, configuración o lógica) que **no** aparece en el texto del ticket.
 
 **Gate (se aplica en orden, el score final es el menor tope alcanzado):**
 
@@ -295,6 +298,8 @@ Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura
 | G6 | score ≥ 90 sin (`tipo_caso` ∈ Operativo/Configuracion/Viabilidad, `requiere_cambio_datos = false` y `verificacion_en_s7 = true`) | score máx. 89 |
 | G7 | `requiere_cambio_datos` y `script_incluido = false` | **bloqueado**: completar el script antes de publicar |
 | G8 | `secciones_completas = false` o `verificacion_en_s7 = false` | **bloqueado**: regenerar |
+| G9 | `mecanismo_confirmado = false` y `tipo_caso` ≠ Viabilidad | score máx. 70 (no se publica tarea ni solución al usuario) |
+| G10 | `hallazgo_distinto_al_sintoma = false` | **bloqueado**: rehacer la §7 con el mecanismo, o, si no se confirmó, con lo revisado, lo descartado y lo pendiente |
 
 - Un bloqueo se resuelve completando el documento **una vez**; si sigue bloqueado, se publica con score máx. 70 y `gate_resultado = bloqueado`.
 - Cualquier tope aplicado → `gate_resultado = degradado` y las reglas en `gate_reglas`. Sin topes → `aprobado`.
@@ -325,8 +330,8 @@ SLA 1 solo con bloqueo total explícito en la descripción; tono urgente con wor
 
 | Rango | Criterio |
 |---|---|
-| **90–100** | Autoservicio: el usuario o consultor lo resuelve completo con configuración o pasos en el sistema, sin técnico ni desarrollo pendiente, con ruta de menú confirmada y verificación incluida. |
-| **81–89** | Intervención manual/técnica puntual que **sí cierra** el caso hoy (corregir datos, anclar/anular registros, método alterno), aunque quede desarrollo preventivo. 85–89 sin cabos sueltos; 81–84 con puntos por confirmar o coordinar. |
+| **90–100** | Autoservicio: el usuario o consultor lo resuelve completo con configuración o pasos en el sistema, sin técnico ni desarrollo pendiente, con mecanismo confirmado, ruta de menú confirmada y verificación incluida. |
+| **81–89** | Intervención manual/técnica puntual que **sí cierra** el caso hoy (corregir datos, anclar/anular registros, método alterno), aunque quede desarrollo preventivo, **con el mecanismo confirmado** (se sabe qué condición lo causa). 85–89 sin cabos sueltos; 81–84 con puntos por confirmar o coordinar. Un workaround sin mecanismo no califica para este rango. |
 | **71–80** | Lo pedido no se puede cumplir hoy de ninguna forma; depende de un desarrollo del proveedor (el workaround solo mitiga). |
 | **41–70** | Diagnóstico plausible con confianza Media/Baja, o basado en core sin confirmar la personalización. |
 | **0–40** | Datos insuficientes, múltiples hipótesis sin evidencia o faltantes críticos. |
@@ -362,7 +367,7 @@ Followups (6.1, 6.2, 71–80, aclaración, capacitación):
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{contenido_html}', {0_o_1}, 0, NOW(), NOW(), 1);
 ```
-En 81–89 el contenido es la §7 en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas, conservando "Cómo verificar que quedó resuelto" y "Si después de aplicarlo el problema continúa".
+En 81–89 el contenido es la §7 en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas. Empieza por la **causa identificada** (nunca por el síntoma que el usuario ya reportó) y conserva "Cómo verificar que quedó resuelto" y "Si después de aplicarlo el problema continúa".
 
 ### 6.4 — Estado, campos y asignación
 
@@ -503,7 +508,8 @@ VALUES
 6. Alcance e impacto del cambio medidos cuando hay flujo compartido o cambio de configuración; volumen alto → Fase 1 / Fase 2; workaround y definitiva separados.
 7. Script sugerido presente si hay que cambiar datos, sin punto y coma y con separadores; nada ejecutado sobre el ERP.
 8. §7 con ruta de menú completa, etiqueta del campo, valor exacto, cómo verificar y qué hacer si no funciona.
-9. Gate 5-C aplicado; 9 secciones completas con §7; canal 6.3 según el rango del score final; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente y Aplica IA escritos (6-C); campos de validación humana intactos.
-10. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` y Solución al Caso por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
-11. Cada escritura verificada por `SELECT` aparte, bajo ~3,2 KB, sin punto y coma, con tablas en atributos HTML legados.
-12. Log registrado con valores exactos de estado, SLA y criticidad, versión de skill, tipo de caso, resultado del gate y bloque de evidencia.
+9. §7 empieza por la causa identificada y corrige esa causa: nunca repite como hallazgo el síntoma del ticket ni ofrece un workaround como única solución. Con ancla E o causa de cálculo, mecanismo reproducido (KO vs OK + simulación) o score máx. 70.
+10. Gate 5-C aplicado; 9 secciones completas con §7; canal 6.3 según el rango del score final; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente y Aplica IA escritos (6-C); campos de validación humana intactos.
+11. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` y Solución al Caso por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
+12. Cada escritura verificada por `SELECT` aparte, bajo ~3,2 KB, sin punto y coma, con tablas en atributos HTML legados.
+13. Log registrado con valores exactos de estado, SLA y criticidad, versión de skill, tipo de caso, resultado del gate y bloque de evidencia.
