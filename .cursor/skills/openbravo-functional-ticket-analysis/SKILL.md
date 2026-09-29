@@ -12,7 +12,7 @@ description: >-
 
 # Análisis de tickets funcionales Openbravo
 
-**Versión de la skill:** `motor-2026-09-29.3` (el orquestador la registra en su log).
+**Versión de la skill:** `motor-2026-09-29.4` (el orquestador la registra en su log).
 
 ## Activación
 
@@ -123,16 +123,23 @@ Del texto, captura o `Detalles Adicionales:` fijar **una** ancla:
    1. **Cadena del proceso:** botón o acción → `ad_process` (o callout/evento) → clase Java, función o trigger que calcula o inserta (Paso 5A.6, con BD primero 5A.0). Leer la lógica exacta: qué filas lee, qué suma o multiplica, qué inserta y **si borra o reemplaza lo generado antes**. Causas típicas de duplicados: re-ejecutar inserta de nuevo sin limpiar lo anterior, un trigger que suma sobre filas ya generadas, una línea de cargo (financiamiento, interés, entrada) que se agrega en cada ejecución, o una fila hija duplicada que la lógica suma dos veces.
    2. **Entradas del cálculo:** listar las tablas y columnas que esa lógica lee (cabecera, líneas, plan de pagos o amortización, satélites `em_*`, maestros y parámetros de configuración que intervienen).
    3. **Caso KO vs casos OK:** consultar esas entradas en el documento afectado y en 2–5 documentos hermanos donde el mismo proceso sí dio el resultado correcto. El propio ticket o la BD suelen nombrarlos (mismo tercero, producto, tipo de documento o fecha). Revisar como mínimo: número de filas hijas por tipo y duplicados (`GROUP BY … HAVING COUNT(*) > 1`), filas generadas por el proceso (`created`, `createdby`, marcas de línea generada), valores de configuración que la lógica consulta, y ejecuciones del proceso en `ad_pinstance` (cuántas y con qué separación, para detectar doble ejecución o doble clic).
-   4. **Simulación:** recalcular por SQL, con las entradas del caso KO, el valor que produciría la lógica leída. Si reproduce el valor incorrecto (ej. 8439 en vez de 4219), el mecanismo queda **confirmado** y se sabe qué entrada lo causa. Si no lo reproduce, repetir con la siguiente diferencia KO vs OK; si ninguna lo reproduce, el mecanismo queda sin confirmar.
-   5. **Resultado:** `Mecanismo confirmado: Sí/No` en §4, con la condición concreta. Ejemplos: "la línea de financiamiento quedó registrada dos veces y el recálculo suma ambas", "el proceso no elimina el plan de amortización anterior antes de regenerarlo", "el parámetro X del tipo de documento hace que el cargo se aplique dos veces". Con `No`, §9 lista qué faltó (ej. clase Java no localizada) y la confianza baja.
-   - **Anti-patrón:** cerrar con "no use ese documento, use otro" o "verifique el valor después de recalcular" sin explicar qué condición distingue a los documentos que fallan de los que funcionan. Eso es un workaround, no un diagnóstico.
+   4. **Simulación ejecutada, no mental.** Con la función, trigger o clase desplegada, ejecutar sobre el registro KO y sobre 1–2 OK la misma lectura que hace el proceso (el `SELECT`/`FOR`, o los valores de cada entrada que esa lógica usa). Anotar en qué entrada difieren y si esa diferencia, pasada por la lógica leída, reproduce el resultado KO. Una reconstrucción hecha de memoria, sin correr la consulta ni leer esas entradas, no confirma el mecanismo.
+   5. **Resultado:** `Mecanismo confirmado: Sí/No` en §4, con la entrada que difiere y el resultado de la simulación. Es insuficiente decir solo el nombre del botón o que "el proceso calcula mal". Con `No`, §9 lista qué faltó y la confianza baja.
+   - **Anti-patrón:** cerrar con "use otro documento", "vuelva a ejecutar el proceso" o "es un defecto del botón" sin nombrar el dato, maestro o acción que distingue al KO del OK.
 10. **Descenso hasta la causa raíz (iterativo, obligatorio):** la condición confirmada en 2.9 (o en la auditoría 1.5) es el **nivel 1**, no el final. Se repite el ciclo hacia atrás en el flujo:
-   1. Tomar la condición del nivel actual como nuevo síntoma (ej. "el plan de amortización tiene cada cuota, la entrada y el interés dos veces").
+   1. Tomar la condición del nivel actual como nuevo síntoma.
    2. **¿Qué paso anterior produjo esa condición?** Identificarlo con la BD: `created`/`createdby` de las filas afectadas (¿nacieron en dos tandas? ¿a qué hora?), las ejecuciones en `ad_pinstance` y en los logs del proceso que coinciden con esas horas, y qué ventana, proceso, callout, trigger o integración inserta o modifica esa tabla (buscarlo en código: `INSERT INTO`/`UPDATE` sobre la tabla, o `OBDal.save` sobre la entidad).
    3. **Leer y simular ese paso anterior:** con los datos del documento que falla, recorrer su lógica y verificar si produce la condición del nivel actual. Comparar contra los documentos que funcionan: ¿pasaron por ese mismo paso? ¿Con qué diferencia (orden de ejecución, número de ejecuciones, configuración, dato de entrada)?
    4. Si lo reproduce → ese paso es el nivel siguiente; volver al punto 1 con su condición.
-   5. **Parar solo al llegar a una causa terminal**, que no es producida por otro paso del flujo. Son terminales: un valor de configuración o maestro; una acción concreta del usuario (ej. pulsar Recalcular dos veces, editar después de generar el plan); un defecto de lógica confirmado en una línea de código concreta (ej. "regenera el plan sin eliminar el anterior"); o un dato recibido de una integración externa. Si la evidencia se agota antes, se declara `CAUSA_TERMINAL_NO_ALCANZADA` indicando en qué nivel y qué faltó (clase no localizada, sin permisos, sin datos de fecha).
+   5. **Parar solo en una causa que el usuario puede corregir, o que ningún dato de entrada explica.** El botón, el proceso o la línea de código que muestra el síntoma **no es terminal** si solo se comporta mal cuando una entrada es distinta a la de un caso que funciona (otro valor, otra cantidad de filas, otro estado, otra vigencia). En ese caso se baja un nivel más (Paso 2.11): la causa terminal es esa entrada. El defecto de código, si existe, se informa como amplificador y como prevención, no como la corrección que cierra el ticket. Sí son terminales, una vez agotado ese descenso: un maestro o parámetro concreto (ventana, registro, valor); una acción del usuario demostrada con `ad_pinstance` o `created`; un defecto de código que ocurre también con las mismas entradas que un caso OK; o un dato de una integración. Si la evidencia se agota antes, `CAUSA_TERMINAL_NO_ALCANZADA` indica el nivel y qué faltó. Prohibido declarar terminal el mismo proceso que el usuario ya señaló, o "use otro documento".
    6. Registrar la **cadena causal** completa: nivel N (causa terminal) → … → nivel 1 → síntoma, cada nivel con su evidencia (consulta, archivo o función y resultado de la simulación). Ninguna solución se propone sobre el nivel 1 si existe un nivel más profundo alcanzable: la corrección apunta a la causa terminal, y la corrección de los datos ya dañados es un paso adicional.
+11. **Dato que distingue (obligatorio en toda incidencia con un caso OK comparable).** El proceso que el usuario señaló es el punto de partida, no la respuesta. Hay que encontrar qué entrada concreta hace que ese proceso dé un resultado distinto:
+    1. De la función, trigger o clase desplegada, listar **todas** las lecturas que deciden el resultado: campos de cabecera y líneas, filas hijas, maestros, parámetros, impuestos, listas de precios, vigencias, estados y cualquier `JOIN` sin agregación.
+    2. Consultar esas entradas en el registro KO y en 1–2 OK del mismo flujo. Registrar solo las que difieren. Si una lectura puede devolver varias filas, contarlas en ambos: una fila de más en el KO es una diferencia, igual que un valor distinto.
+    3. Para cada diferencia, comprobar con la lógica leída si ella sola reproduce el síntoma. La primera que lo reproduce es candidata; las que no, se descartan en la tabla de hipótesis.
+    4. Nombrar el registro en la ventana real (`ad_window_trl` / `ad_tab_trl`): qué línea o campo, valor actual, valor del caso OK, `isactive`, `created`, `updated`. Incluir inactivos. Si hoy KO y OK ya coinciden, buscar en `ad_audit_trail` cambios de esa tabla entre la ejecución KO y ahora: el dato pudo corregirse después del fallo.
+    5. La causa terminal es ese registro o valor, en lenguaje de la ventana. La corrección es dejarlo como en el caso OK y después volver a ejecutar el proceso sobre lo ya afectado. Repetir el proceso, o usar otro documento, no corrige el dato.
+    6. Si ninguna entrada difiere y la simulación con esas entradas iguales igual reproduce el fallo, la causa terminal es el defecto de código, citado con función y condición. No se afirma sin haber comparado las entradas del punto 2.
 
 **7-bis. Enumeración exhaustiva de candidatos (previa a comparar):** identificar la tabla maestra; con BD, ejecutar `pg_describe_table` o `SELECT column_name FROM information_schema.columns WHERE table_name = '<tabla>'` y listar **todas** las columnas `EM_*`. Es independiente del repo y es la **única fuente válida** si el repo no es accesible. La lista completa es evidencia de 5D; si hay 2+ columnas plausibles, se comparan todas. Aplica a cualquier tabla maestra y dominio.
 - **Relación funcional (para decidir qué columnas llevan fila propia en la tabla de hipótesis):** una columna `EM_*` es *relacionada* si su módulo es el mismo del flujo afectado, si aparece en el código (función, trigger, clase, callout) del proceso que falla o del proceso esperado, o si su nombre/descripción en `ad_column`/`ad_element` alude a la acción del síntoma. Las relacionadas se comparan contra hermanos **siempre**. Las no relacionadas se listan en 5D y se agrupan en una sola fila (ver Paso 4).
@@ -189,7 +196,7 @@ Dominio no claro → declararlo en §9 y bajar confianza. Los nombres de módulo
 - **Causa estructural:** por qué el sistema permitió que ocurriera sin corregirse (ej. un módulo custom que no replica una sincronización del estándar).
 - Tipo de causa (una sola vez, en el nivel que corresponda): configuración faltante/incorrecta · estado del documento · restricción de negocio del sistema · dato del cliente erróneo · bug real (último recurso).
 - Si la conclusión es "no hay error"/"comportamiento esperado": citar el resultado de la comparación contra pares (Paso 2.7), campo por campo.
-- **Mecanismo confirmado: Sí/No** — la condición concreta (dato, configuración o lógica) que produce el síntoma en esta transacción y cómo se demostró (Paso 2.9 o auditoría 1.5). La causa inmediata nunca puede ser una reformulación del síntoma ("el recálculo duplica el importe" es síntoma, no causa).
+- **Mecanismo confirmado: Sí/No** — la condición concreta que produce el síntoma y cómo se demostró (Paso 2.9 o auditoría 1.5). La causa inmediata nunca puede ser una reformulación del síntoma ni el botón que el usuario ya nombró. Falta el dato que distingue al caso KO del OK (Paso 2.11).
 - **Cadena causal (Paso 2.10):** todos los niveles desde la causa terminal hasta el síntoma, cada uno con su evidencia, y si se alcanzó la causa terminal (`Sí` / `CAUSA_TERMINAL_NO_ALCANZADA` + motivo). La "Causa raíz" de los cuatro niveles es la causa terminal, no el nivel 1.
 
 **Tabla de hipótesis** (obligatoria si la causa candidata es un maestro/configuración): Hipótesis | Campo (nombre exacto de columna) | Evidencia (caso vs pares) | Resultado | Estado.
@@ -218,15 +225,15 @@ Mismas 9 secciones: §1 Tipo, Subtipo, Dominio, Confianza, ¿desarrollo? · §2 
 **A. Incidencia** (lenguaje de negocio para el cliente; es el texto que leerá el solicitante y debe explicarle qué está pasando y por qué, no repetirle lo que ya reportó; con sub-casos, repetir los bloques por problema numerado):
 
 ```markdown
-[Saludo breve.] Revisamos el caso y encontramos la causa: [una oración con la causa terminal en lenguaje de negocio].
+[Saludo breve.] Revisamos el caso y encontramos la causa: [una oración con el registro, valor o acción que el ticket no mencionaba].
 
 **Qué identificamos**
-[La condición concreta encontrada en esta transacción, en las relacionadas o en la configuración, y cómo se comprobó (ej. "comparando con las cotizaciones que sí calculan bien, en esta el plan de pagos tiene cada cuota registrada dos veces"). El síntoma que reportó el usuario no se repite como hallazgo.]
+[El dato que distingue a este caso de uno que sí funciona, con la ventana y el valor. No sirve repetir el síntoma ni nombrar solo el botón que el usuario ya pulsó.]
 
 **Por qué ocurre**
-1. [Causa terminal: el paso, acción o configuración donde empieza todo (ej. "al guardar la cotización el sistema genera el plan de pagos y, al pulsar Recalcular, lo vuelve a generar sin eliminar el anterior").]
-2. [Nivel intermedio: qué provoca eso (ej. "quedan dos juegos de cuotas, entrada e intereses").]
-3. [Efecto visible: por qué el usuario ve el valor incorrecto (ej. "el total y la línea de financiamiento se calculan sumando ambos juegos, por eso salen al doble").]
+1. [Causa terminal: el registro, valor o acción donde empieza.]
+2. [Cómo el proceso usa ese dato.]
+3. [Efecto visible que el usuario reportó.]
 [Tantos puntos como niveles tenga la cadena causal, del origen al efecto, en lenguaje llano y sin nombres técnicos.]
 
 **Qué debieron hacer (proceso correcto en Openbravo)** [solo si la causa es un uso incorrecto del proceso]
@@ -236,7 +243,7 @@ Mismas 9 secciones: §1 Tipo, Subtipo, Dominio, Confianza, ¿desarrollo? · §2 
 Paso 1 — Ingrese a **[Menú > Submenú > Ventana]** y [acción].
 Paso 2 — En el campo **[etiqueta en pantalla]**, cambie el valor de **[valor actual]** a **[valor nuevo exacto]**. [Si es una acción sobre un documento: nº de documento y botón exacto.]
 Paso 3 — [...]
-[Los pasos corrigen **la causa terminal** y luego los datos ya afectados (ej. "el equipo técnico corregirá el proceso de Recalcular para que elimine el plan anterior" + "se depurará el plan duplicado de las cotizaciones X e Y"). Si además existe un workaround mientras se corrige, va en un bloque aparte titulado "Mientras se aplica la corrección", nunca como única solución.]
+[Los pasos corrigen **la causa terminal** (el dato o registro que difiere del caso que funciona) y después los documentos ya afectados. Usar otro documento o repetir el proceso sin corregir ese dato va solo en "Mientras se aplica la corrección", nunca como única solución. Un arreglo de código es prevención cuando el fallo solo aparece con esa entrada distinta; no sustituye a corregirla.]
 
 **Cómo verificar que quedó resuelto**
 - [Acción concreta y resultado visible esperado, ej. "Complete nuevamente el pedido N y confirme que se genera el albarán".]
@@ -336,7 +343,8 @@ Archivos por módulo: `01-Facturacion-Electronica`, `02-Retenciones`, `03-Pagos-
 - Código desplegado en BD vs repo: IGUAL / `REPO_DESACTUALIZADO` / SOLO BD / SOLO REPO, por objeto relevante.
 - Ventana/proceso UI confirmado: ruta de menú completa y etiqueta de campo, y la fuente (BD `_trl` o repo).
 - Columnas `EM_*` enumeradas (7-bis): total, relacionadas (comparadas una a una) y no relacionadas (listadas), y resultado de la comparación contra pares, o por qué no hay conjunto comparable.
-- Mecanismo (Paso 2.9): confirmado Sí/No, cadena del proceso leída, entradas comparadas KO vs OK (qué documentos) y resultado de la simulación (valor calculado vs valor observado).
+- Mecanismo (Paso 2.9): confirmado Sí/No, lógica leída, documentos comparados y resultado de la simulación ejecutada.
+- Dato que distingue (Paso 2.11): nombrado Sí/No aplica, ventana y registro o valor que difiere del caso OK, o "ninguna entrada difiere y el fallo se reproduce igual".
 - Cadena causal (Paso 2.10): cada nivel con el paso que lo produjo, la evidencia (consulta, `created`/`ad_pinstance`, archivo o función) y el resultado de su simulación; causa terminal alcanzada Sí o `CAUSA_TERMINAL_NO_ALCANZADA` + motivo.
 - Impacto del cambio propuesto (Paso 2.8): número de registros/procesos afectados y consulta usada, o "no aplica" con motivo.
 - Matriz completa: referenciar la de §4 (cuántos registros y campos), sin repetirla.
@@ -350,6 +358,6 @@ Para el paso a paso en pantalla: **GUIA OPERATIVA** / **CREA FLUJO** → skill `
 ## Uso desde `triage-glpi-auto`
 
 - El documento de 9 secciones y su §7 son **únicos por ticket y corrida**: cualquier profundización (Paso 5-B del orquestador) se incorpora aquí **antes** de redactar §7, nunca como segunda versión ni comentario de corrección.
-- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/2.10/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
+- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/2.10/2.11/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
 - **Contrato ancla A:** con error SQL/constraint/`ERROR=` al Completar/Registrar/Procesar, la auditoría de `ad_pinstance` debe estar hecha antes de permitir score ≥ 90 o un cierre como "comportamiento esperado"; si queda `OMITIDO` o contradice el cierre, se baja confianza y el orquestador aplica el tope de score (su Paso 6.1).
-- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7, sub-casos, mecanismo confirmado, niveles de la cadena causal y si se alcanzó la causa terminal, y si la §7 aporta un hallazgo distinto del síntoma reportado y explica la causa.
+- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7, sub-casos, mecanismo confirmado, dato que distingue al KO del OK (Paso 2.11), niveles de la cadena causal y si se alcanzó la causa terminal, y si la §7 aporta un hallazgo distinto del síntoma reportado y explica la causa.
