@@ -5,7 +5,7 @@ description: Agente orquestador de triage automático de tickets GLPI (multi-cli
 
 # Agente Orquestador de Triage GLPI — ejecución automática
 
-**Versión de la skill:** `triage-2026-10-01.2` (se registra en el log junto a la versión del motor).
+**Versión de la skill:** `triage-2026-10-01.3` (se registra en el log junto a la versión del motor).
 
 Corre sin intervención humana y sin pedir confirmación. Está vinculado al **repo orquestador**; los repos de código de cada cliente se leen dinámicamente vía **MCP GitHub**.
 
@@ -279,7 +279,7 @@ Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpo
 Antes de publicar, armar el bloque de evidencia (JSON compacto, sin punto y coma) con lo que el documento **realmente** contiene:
 
 ```json
-{"version_skill":"triage-2026-10-01.2/motor-2026-10-01.2","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
+{"version_skill":"triage-2026-10-01.3/motor-2026-10-01.3","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
  "ancla":"C","ad_pinstance":"NO APLICA","codigo":"LEIDO","repo_vs_bd":"IGUAL","componente_confirmado":true,"componente_fuente":"BD",
  "causa_en_maestro":true,"comparacion_pares":"COMPARADO","cierre_comportamiento_esperado":false,
  "mecanismo_confirmado":true,"dato_distingue":"NOMBRADO","hallazgo_distinto_al_sintoma":true,"niveles_causa":3,"causa_terminal":true,"s7_explica_causa":true,
@@ -310,7 +310,7 @@ Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura
 | G13 | hay un caso OK comparable y `dato_distingue` ≠ NOMBRADO, o la §7 solo nombra el proceso que el usuario ya señaló | **bloqueado** una vez: ejecutar el motor Paso 2.11 y rehacer la §7 con el registro o valor que distingue al caso |
 | G14 | `correccion_tecnica_admin = true` y `s7_sin_pasos_admin = false` | **bloqueado**: rehacer la §7 con la plantilla C del motor y mover los pasos de administración a §5.A/§6. No altera el score |
 
-- Un bloqueo se resuelve completando el documento **una vez**; si sigue bloqueado, se publica con score máx. 70 y `gate_resultado = bloqueado`. **Excepción G14:** si tras rehacerla la §7 aún contiene pasos de administración, no se publica ningún canal público (6.3), el análisis queda solo privado y se registra `gate_resultado = bloqueado` con `G14`.
+- Un bloqueo se resuelve completando el documento **una vez**; si sigue bloqueado, se publica con score máx. 70 y `gate_resultado = bloqueado`. **Excepción G14:** si tras rehacerla la §7 aún contiene pasos de administración, no se publica el canal 6.3, el análisis queda solo en 6.2 y se registra `gate_resultado = bloqueado` con `G14`.
 - Cualquier tope aplicado → `gate_resultado = degradado` y las reglas en `gate_reglas`. Sin topes → `aprobado`.
 - La justificación del score en 6.1 cita las reglas del gate aplicadas.
 - El bloque va al log (`evidencia_json`), no a GLPI.
@@ -319,7 +319,7 @@ Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura
 
 ## Paso 6 — Publicar (sin confirmación)
 
-Vía `glpi`, autor `users_id = 148`. Todo comentario es **privado** (`is_private = 1`) salvo cuatro excepciones públicas dirigidas al solicitante: el comentario de Capacitación (4.0), las **Preguntas de aclaración** (4.4), la **tarea `ANÁLISIS INICIAL`** (6.3, score 71–89, solo diagnóstico sin pasos) y la **tarea `CORRECCIÓN TÉCNICA EN EVALUACIÓN`** (6.3, corrección técnica de administrador con score 81–100). No se publica comentario de "primer contacto".
+Vía `glpi`, autor `users_id = 148`. Todo comentario es **privado** (`is_private = 1`), incluidos **todos los comentarios de análisis y de solución** (6.1, 6.2, 6.3, 6.3-bis y la corrección técnica de administrador), sea cual sea el score. Solo hay dos excepciones públicas dirigidas al solicitante: el comentario de Capacitación (4.0) y las **Preguntas de aclaración** (4.4). El flujo **nunca** escribe en `glpi_itilsolutions` ni deja un ticket en Resuelto: el responsable asignado revisa los comentarios privados, decide qué comunicar al cliente y cierra el ticket manualmente. No se publica comentario de "primer contacto".
 
 ### 6.1 — `[TRIAGE-SLA-SCORE]` (privado)
 Un solo comentario con: Nivel SLA · Criticidad · Área funcional · Tiempo estimado de revisión inicial · Score de acertividad (0–100) · Justificación del rango (incluidas las reglas del gate 5-C aplicadas) · **Asignación** (usuario, perfil y motivo con los números de 6.4). En reanálisis, primera línea `Reanálisis N`.
@@ -353,65 +353,64 @@ El documento completo en HTML para consultor/técnico (puede incluir SQL, IDs, m
 - **Dividir** por el límite de 6-A: `Parte 1 de 2` (§1–3) y `Parte 2 de 2` (§4–9 + nota de adjuntos). Si la Parte 2 supera ~3,2 KB: `1 de 3` (§1–3), `2 de 3` (§4–6, incluye script), `3 de 3` (§7–9). Si aun así una parte supera el límite, seguir dividiendo por sección (`1 de N`), nunca recortar contenido.
 - Cambio de datos en BD → el **script sugerido** (6-B) va en §5/§6, con `SELECT` de localización + escritura acotada o plantilla con placeholders. Si el usuario puede hacerlo por interfaz, §7 da ruta y pasos; el script queda como respaldo.
 
-### 6.3 — Canal adicional según score
+### 6.3 — Canal adicional según score (siempre privado)
 La §7 (que ya está en 6.2) se divide en dos bloques:
 - **Bloque diagnóstico:** saludo con la causa en una oración, **Qué identificamos** y **Por qué ocurre**.
 - **Bloque solución:** **Solución a aplicar o verificar**, "Mientras se aplica la corrección" si existe, **Cómo verificar que quedó resuelto**, **Si después de aplicarlo el problema continúa**, "Otras opciones a considerar" si existe e **Importante**.
 
 Qué se publica depende del score final:
-- **Score 90–100:** una sola publicación con la **§7 completa** (diagnóstico + solución), en su mismo orden.
-- **Score 71–89:** el canal **público** lleva **solo el bloque diagnóstico** más la **nota de análisis inicial**. Inmediatamente después se publica el bloque solución en un **followup privado** aparte (6.3-bis). En el canal público no va ningún paso, ruta de menú, valor a cambiar ni instrucción para resolver el ticket.
-- **Score 0–70:** nada público (G9).
+- **Score 90–100:** un solo comentario privado con la **§7 completa** (diagnóstico + solución), en su mismo orden.
+- **Score 71–89:** el comentario `ANÁLISIS INICIAL` lleva **solo el bloque diagnóstico** más la **nota de análisis inicial**. Inmediatamente después se publica el bloque solución en otro comentario privado (6.3-bis). En `ANÁLISIS INICIAL` no va ningún paso, ruta de menú, valor a cambiar ni instrucción para resolver el ticket.
+- **Score 0–70:** no se publica canal adicional (G9).
 
-Nunca se publica solo la parte de pasos: el cliente siempre recibe el porqué. `TRIAGE-RESPUESTA-SUGERIDA` es solo el nombre interno: **nunca** se escribe en el contenido; el contenido inicia con el encabezado visible del rango.
+Aunque todos son privados, el contenido se redacta como texto listo para el cliente (lenguaje de negocio, sin SQL, IDs internos ni marcadores), para que el responsable pueda copiarlo o hacerlo público si lo aprueba.
 
-**Nota de análisis inicial** (cierre obligatorio del canal público con score 71–89; texto base, adaptable al caso sin cambiar el sentido):
+Nunca se redacta solo la parte de pasos: el texto para el cliente siempre lleva el porqué. `TRIAGE-RESPUESTA-SUGERIDA` es solo el nombre interno: **nunca** se escribe en el contenido; el contenido inicia con el encabezado visible del rango.
+
+**Nota de análisis inicial** (cierre obligatorio de `ANÁLISIS INICIAL` con score 71–89; texto base, adaptable al caso sin cambiar el sentido):
 ```
 Este es el primer análisis realizado sobre su caso. Se lo detallamos para que lo tenga en cuenta. En base a este diagnóstico, nuestro equipo continuará analizando el caso y le informaremos por este mismo ticket los siguientes pasos.
 ```
 
-| Score | Canal público | Visibilidad | Encabezado visible | Contenido |
+| Score | Canal | Visibilidad | Encabezado visible | Contenido |
 |---|---|---|---|---|
-| 90–100 | Solución del ticket (`glpi_itilsolutions`) | según GLPI | `SOLUCIÓN AL CASO` | §7 completa |
-| 71–89 | Tarea (`glpi_tickettasks`), `actiontime = 600`, `state = 2`, `users_id_tech = 148` | **Pública** | `ANÁLISIS INICIAL` | Bloque diagnóstico + nota de análisis inicial |
+| 90–100 | Followup (`glpi_itilfollowups`) | **Privado** | `SOLUCIÓN AL CASO` | §7 completa |
+| 71–89 | Tarea (`glpi_tickettasks`), `actiontime = 600`, `state = 2`, `users_id_tech = 148` | **Privada** | `ANÁLISIS INICIAL` | Bloque diagnóstico + nota de análisis inicial |
 | 0–70 | No se publica canal adicional | — | — | — |
 
 #### 6.3-bis — `[TRIAGE-SOLUCION-PROPUESTA]` (privado, score 71–89)
-Followup privado (`is_private = 1`) publicado **después** de la tarea `ANÁLISIS INICIAL`, que inicia con `[TRIAGE-SOLUCION-PROPUESTA]` y el encabezado visible `<b>SOLUCIÓN PROPUESTA - USO INTERNO</b>`. Contiene el **bloque solución** de la §7 íntegro (mismos pasos, rutas y valores que habría recibido el cliente), para que el responsable asignado lo valide, lo complete y decida cuándo y cómo comunicarlo. Si supera ~3,2 KB, dividir como en 6.2. Solo se publica si la tarea pública quedó verificada (6-A).
+Followup privado (`is_private = 1`) publicado **después** de la tarea `ANÁLISIS INICIAL`, que inicia con `[TRIAGE-SOLUCION-PROPUESTA]` y el encabezado visible `<b>SOLUCIÓN PROPUESTA - USO INTERNO</b>`. Contiene el **bloque solución** de la §7 íntegro (mismos pasos, rutas y valores que habría recibido el cliente), para que el responsable asignado lo valide, lo complete y decida cuándo y cómo comunicarlo. Si supera ~3,2 KB, dividir como en 6.2. Solo se publica si la tarea `ANÁLISIS INICIAL` quedó verificada (6-A).
 
 **Corrección técnica de administrador (`correccion_tecnica_admin = true`) — tiene prioridad sobre la tabla anterior:**
 
 | Score | Canal | Visibilidad | Encabezado visible | Contenido |
 |---|---|---|---|---|
-| 81–100 | Tarea (`glpi_tickettasks`), mismos valores que 81–89 | **Pública** | `CORRECCIÓN TÉCNICA EN EVALUACIÓN` | §7 con plantilla C del motor |
+| 81–100 | Tarea (`glpi_tickettasks`), mismos valores que 81–89 | **Privada** | `CORRECCIÓN TÉCNICA EN EVALUACIÓN` | §7 con plantilla C del motor |
 | 71–80 | Followup | Privado | `SOLUCIÓN AL CASO` | §7 con plantilla C |
 | 0–70 | No se publica canal adicional | — | — | — |
 
-- **Nunca** se publica `glpi_itilsolutions` en este caso, aunque el score sea 90–100: el cambio aún no está aplicado y requiere evaluación técnica. El score se conserva tal cual (refleja la certeza del diagnóstico) y se escribe en 6-C normalmente.
+- El cambio aún no está aplicado y requiere evaluación técnica. El score se conserva tal cual (refleja la certeza del diagnóstico) y se escribe en 6-C normalmente.
 - El procedimiento de administración (rutas del Diccionario, códigos internos, módulo En desarrollo, export) solo existe en 6.2 privado.
-- Si el contenido público aún contiene pasos de administración tras el gate G14, no se publica (ver G14).
+- Si el contenido para el cliente aún contiene pasos de administración tras el gate G14, no se publica (ver G14).
 - Con corrección técnica de administrador no se publica 6.3-bis: la plantilla C no tiene pasos para el cliente y el procedimiento técnico ya está en 6.2.
 
 ```sql
--- 90–100
-INSERT INTO glpi_itilsolutions (itemtype, items_id, solutiontypes_id, content, date_creation, date_mod, users_id, status)
-VALUES ('Ticket', {ticket_id}, 0, '{respuesta_html}', NOW(), NOW(), 148, 1);
--- 71–89 (ANÁLISIS INICIAL) y CORRECCIÓN TÉCNICA EN EVALUACIÓN
+-- 71–89 (ANÁLISIS INICIAL) y CORRECCIÓN TÉCNICA EN EVALUACIÓN — siempre is_private = 1
 INSERT INTO glpi_tickettasks (tickets_id, taskcategories_id, date, users_id, users_id_editor, content, is_private, actiontime, state, users_id_tech, groups_id_tech, date_creation, date_mod, timeline_position)
-VALUES ({ticket_id}, 0, NOW(), 148, 148, '{respuesta_html}', 0, 600, 2, 148, 0, NOW(), NOW(), 1);
+VALUES ({ticket_id}, 0, NOW(), 148, 148, '{respuesta_html}', 1, 600, 2, 148, 0, NOW(), NOW(), 1);
 ```
-Followups (6.1, 6.2, 6.3-bis, aclaración, capacitación):
+Followups (6.1, 6.2, `SOLUCIÓN AL CASO` 90–100, 6.3-bis y admin 71–80 con `is_private = 1`; aclaración y capacitación con `is_private = 0`):
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{contenido_html}', {0_o_1}, 0, NOW(), NOW(), 1);
 ```
-En 71–89 el contenido público es el bloque diagnóstico en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas, más la nota de análisis inicial. Empieza por la **causa identificada** (nunca por el síntoma que el usuario ya reportó). No incluye "Solución a aplicar o verificar", "Cómo verificar que quedó resuelto", "Si después de aplicarlo el problema continúa", "Otras opciones a considerar" ni "Importante": esos van en 6.3-bis.
+En 71–89 el contenido de `ANÁLISIS INICIAL` es el bloque diagnóstico en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas, más la nota de análisis inicial. Empieza por la **causa identificada** (nunca por el síntoma que el usuario ya reportó). No incluye "Solución a aplicar o verificar", "Cómo verificar que quedó resuelto", "Si después de aplicarlo el problema continúa", "Otras opciones a considerar" ni "Importante": esos van en 6.3-bis.
 
 ### 6.4 — Estado, campos y asignación
 
 | Caso | Condición | status | Asignado |
 |---|---|---|---|
-| A | Solución publicada (score 90–100) | 5 Resuelto | según selección |
+| A | Análisis publicado con score 90–100 | 3 Planificado (**nunca** 5 Resuelto: el cierre lo hace el responsable) | según selección |
 | A-1 | Análisis publicado con score 0–89 | 3 Planificado | según selección |
 | A-2 | Corrección técnica de administrador (`correccion_tecnica_admin = true`), cualquier score | 3 Planificado | perfil **Técnico** según selección |
 | B | `preguntas_enviadas` | 4 En espera | consultor según selección |
@@ -496,7 +495,7 @@ GLPI no aplica estilo a las tablas y `style` con varias declaraciones usa punto 
 **Solo escribe en GLPI:**
 - `glpi_itilfollowups`: comentarios (6.1, 6.2, 6.3-bis `[TRIAGE-SOLUCION-PROPUESTA]`, admin 71–80, aclaración, capacitación, proyecto no registrado, repo inaccesible, estructura no detectada, límite de reanálisis).
 - `glpi_tickettasks`: `ANÁLISIS INICIAL` (71–89) y `CORRECCIÓN TÉCNICA EN EVALUACIÓN` (corrección técnica de administrador, 81–100).
-- `glpi_itilsolutions`: `SOLUCIÓN AL CASO` (90–100, nunca con corrección técnica de administrador).
+- `glpi_itilsolutions`: **nunca** (la `SOLUCIÓN AL CASO` 90–100 va como followup privado).
 - `glpi_tickets`: categoría, impacto, prioridad y `status` (6.4, 2-A, 4.0).
 - `glpi_tickets_users`: asignación `type = 2` (6.4).
 - `glpi_plugin_fields_ticketticketsformfields`: solo `scoreagentefield` y `plugin_fields_aplicaiafielddropdowns_id` (6-C).
@@ -547,10 +546,10 @@ VALUES
 6. Alcance e impacto del cambio medidos cuando hay flujo compartido o cambio de configuración; volumen alto → Fase 1 / Fase 2; workaround y definitiva separados.
 7. Script sugerido presente si hay que cambiar datos, sin punto y coma y con separadores; nada ejecutado sobre el ERP.
 8. §7 con ruta de menú completa, etiqueta del campo, valor exacto, cómo verificar y qué hacer si no funciona (con corrección técnica de administrador, la ruta y el campo solo para la verificación del usuario: ver ítem 14).
-9. §7 empieza por la causa identificada y corrige esa causa: nunca repite como hallazgo el síntoma del ticket ni ofrece un workaround como única solución. Con ancla E o causa de cálculo, mecanismo reproducido contra un caso OK o score máx. 70. Si existe un caso comparable, el dato que distingue está nombrado (motor 2.11) en la §7. Después, descenso hasta la causa terminal (motor 2.10). El canal público 6.3 lleva la §7 completa, incluidos "Qué identificamos" y "Por qué ocurre".
+9. §7 empieza por la causa identificada y corrige esa causa: nunca repite como hallazgo el síntoma del ticket ni ofrece un workaround como única solución. Con ancla E o causa de cálculo, mecanismo reproducido contra un caso OK o score máx. 70. Si existe un caso comparable, el dato que distingue está nombrado (motor 2.11) en la §7. Después, descenso hasta la causa terminal (motor 2.10). El canal 6.3 (privado) siempre incluye "Qué identificamos" y "Por qué ocurre".
 10. Gate 5-C aplicado; 9 secciones completas con §7; canal 6.3 según el rango del score final; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente y Aplica IA escritos (6-C); campos de validación humana intactos.
 11. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, Solución al Caso (o `ANÁLISIS INICIAL` + `[TRIAGE-SOLUCION-PROPUESTA]`) por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
 12. Cada escritura verificada por `SELECT` aparte, bajo ~3,2 KB, sin punto y coma, con tablas en atributos HTML legados.
 13. Log registrado con valores exactos de estado, SLA y criticidad, versión de skill, tipo de caso, resultado del gate y bloque de evidencia.
-14. Corrección en Diccionario de la Aplicación o con rol System Administrator (motor Paso 2.12): §7 con plantilla C (causa + "corrección de nivel técnico, se evaluará el cambio"), sin pasos de administración ni códigos internos en ningún canal público; procedimiento completo solo en 6.2 privado; canal `CORRECCIÓN TÉCNICA EN EVALUACIÓN`, nunca `glpi_itilsolutions`; status 3 y asignación a perfil Técnico.
-15. Publicación por score: 90–100 → §7 completa con pasos en `SOLUCIÓN AL CASO`. 71–89 → tarea pública `ANÁLISIS INICIAL` solo con saludo, "Qué identificamos", "Por qué ocurre" y la nota de análisis inicial (sin pasos, rutas ni valores a cambiar), y a continuación followup privado `[TRIAGE-SOLUCION-PROPUESTA]` con el bloque solución. 0–70 → nada público.
+14. Corrección en Diccionario de la Aplicación o con rol System Administrator (motor Paso 2.12): §7 con plantilla C (causa + "corrección de nivel técnico, se evaluará el cambio"), sin pasos de administración ni códigos internos en el texto para el cliente; procedimiento completo solo en 6.2 privado; canal privado `CORRECCIÓN TÉCNICA EN EVALUACIÓN`; status 3 y asignación a perfil Técnico.
+15. Publicación por score, **todo privado**: 90–100 → §7 completa con pasos en followup `SOLUCIÓN AL CASO`, status 3 (nunca Resuelto). 71–89 → tarea privada `ANÁLISIS INICIAL` solo con saludo, "Qué identificamos", "Por qué ocurre" y la nota de análisis inicial (sin pasos, rutas ni valores a cambiar), y a continuación followup privado `[TRIAGE-SOLUCION-PROPUESTA]` con el bloque solución. 0–70 → sin canal adicional. Solo Capacitación y Preguntas de aclaración son públicas.

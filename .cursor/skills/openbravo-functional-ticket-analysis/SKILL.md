@@ -12,7 +12,7 @@ description: >-
 
 # Análisis de tickets funcionales Openbravo
 
-**Versión de la skill:** `motor-2026-10-01.2` (el orquestador la registra en su log).
+**Versión de la skill:** `motor-2026-10-01.3` (el orquestador la registra en su log).
 
 ## Activación
 
@@ -399,7 +399,7 @@ Para el paso a paso en pantalla: **GUIA OPERATIVA** / **CREA FLUJO** → skill `
 
 ## Uso desde `triage-glpi-auto`
 
-- **§7 en dos bloques:** el orquestador puede publicar por separado el **bloque diagnóstico** (saludo con la causa, "Qué identificamos", "Por qué ocurre") y el **bloque solución** (desde "Solución a aplicar o verificar" hasta "Importante"). Con score menor a 90 solo el diagnóstico es público y la solución queda privada (orquestador 6.3 y 6.3-bis). Por eso el bloque diagnóstico debe entenderse por sí solo: sin pasos, rutas de menú, valores a cambiar ni referencias como "ver los pasos abajo".
+- **§7 en dos bloques:** el orquestador puede publicar por separado el **bloque diagnóstico** (saludo con la causa, "Qué identificamos", "Por qué ocurre") y el **bloque solución** (desde "Solución a aplicar o verificar" hasta "Importante"). Con score menor a 90 se publican en dos comentarios separados, `ANÁLISIS INICIAL` con el diagnóstico y otro con la solución (orquestador 6.3 y 6.3-bis). Todos los comentarios del orquestador son privados. Por eso el bloque diagnóstico debe entenderse por sí solo: sin pasos, rutas de menú, valores a cambiar ni referencias como "ver los pasos abajo".
 - El documento de 9 secciones y su §7 son **únicos por ticket y corrida**: cualquier profundización (Paso 5-B del orquestador) se incorpora aquí **antes** de redactar §7, nunca como segunda versión ni comentario de corrección.
 - Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/2.10/2.11/2.12/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
 - **Contrato ancla A:** con error SQL/constraint/`ERROR=` al Completar/Registrar/Procesar, la auditoría de `ad_pinstance` debe estar hecha antes de permitir score ≥ 90 o un cierre como "comportamiento esperado"; si queda `OMITIDO` o contradice el cierre, se baja confianza y el orquestador aplica el tope de score (su Paso 6.1).
