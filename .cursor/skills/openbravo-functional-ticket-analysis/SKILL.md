@@ -12,7 +12,7 @@ description: >-
 
 # Análisis de tickets funcionales Openbravo
 
-**Versión de la skill:** `motor-2026-09-29.4` (el orquestador la registra en su log).
+**Versión de la skill:** `motor-2026-10-01.2` (el orquestador la registra en su log).
 
 ## Activación
 
@@ -140,6 +140,14 @@ Del texto, captura o `Detalles Adicionales:` fijar **una** ancla:
     4. Nombrar el registro en la ventana real (`ad_window_trl` / `ad_tab_trl`): qué línea o campo, valor actual, valor del caso OK, `isactive`, `created`, `updated`. Incluir inactivos. Si hoy KO y OK ya coinciden, buscar en `ad_audit_trail` cambios de esa tabla entre la ejecución KO y ahora: el dato pudo corregirse después del fallo.
     5. La causa terminal es ese registro o valor, en lenguaje de la ventana. La corrección es dejarlo como en el caso OK y después volver a ejecutar el proceso sobre lo ya afectado. Repetir el proceso, o usar otro documento, no corrige el dato.
     6. Si ninguna entrada difiere y la simulación con esas entradas iguales igual reproduce el fallo, la causa terminal es el defecto de código, citado con función y condición. No se afirma sin haber comparado las entradas del punto 2.
+12. **Quién ejecuta la corrección — corrección técnica de administrador (obligatorio en toda solución que cambie algo en el sistema).** Antes de redactar §7, determinar si la corrección la puede hacer el usuario del cliente con su rol habitual o si es un trabajo técnico reservado a los administradores del sistema. Es **corrección técnica de administrador** (`CORRECCION_TECNICA_ADMIN = Sí`) si se cumple **cualquiera** de estas condiciones:
+    1. Se hace en una ventana del **Diccionario de la Aplicación** o de administración del sistema: Módulo (incluido marcar o desmarcar **En desarrollo**), Ventanas, pestañas y campos, Tablas y columnas, Referencia y su Lista de valores, Elemento, Proceso/Informe, Mensaje, Menú, Validaciones, Callouts, Preferencias o parámetros a nivel sistema, Gestión de módulos, y las traducciones de esos objetos.
+    2. El registro a modificar pertenece al cliente **System** (`ad_client_id = '0'`) o su tabla tiene nivel de acceso solo sistema (`ad_table.accesslevel = '4'`). Consultarlo con BD: `SELECT t.tablename, t.accesslevel FROM ad_table t WHERE lower(t.tablename) = lower('{tabla}')` y `SELECT ad_client_id FROM {tabla} WHERE {tabla}_id = '{id}'`.
+    3. La ventana solo es accesible a roles de nivel sistema: ninguno de los roles activos del cliente la tiene en `ad_window_access` (o el rol que la tiene es de `userlevel` sistema, ej. System Administrator).
+    4. Requiere exportar la BD del módulo, compilar, reiniciar el servidor de aplicaciones o editar archivos del servidor.
+    - Si ninguna se cumple, `CORRECCION_TECNICA_ADMIN = No` y la §7 sigue la plantilla A normal. Con datos insuficientes para decidirlo, se toma **Sí** y se declara en §9 (es más seguro no publicar al cliente pasos de administración).
+    - Con `Sí`: el paso a paso completo (rutas del Diccionario, registros, códigos internos, módulo En desarrollo, export y verificación técnica) va en **§5.A y §6** (audiencia técnica, privado), y la §7 usa la **plantilla C**. El diagnóstico, el score y el veredicto no cambian por esto: solo cambia quién ejecuta y qué se le muestra al cliente.
+    - Registrar el resultado en §1 (`Corrección técnica de administrador: Sí/No` + condición que se cumplió) y en 5D.
 
 **7-bis. Enumeración exhaustiva de candidatos (previa a comparar):** identificar la tabla maestra; con BD, ejecutar `pg_describe_table` o `SELECT column_name FROM information_schema.columns WHERE table_name = '<tabla>'` y listar **todas** las columnas `EM_*`. Es independiente del repo y es la **única fuente válida** si el repo no es accesible. La lista completa es evidencia de 5D; si hay 2+ columnas plausibles, se comparan todas. Aplica a cualquier tabla maestra y dominio.
 - **Relación funcional (para decidir qué columnas llevan fila propia en la tabla de hipótesis):** una columna `EM_*` es *relacionada* si su módulo es el mismo del flujo afectado, si aparece en el código (función, trigger, clase, callout) del proceso que falla o del proceso esperado, o si su nombre/descripción en `ad_column`/`ad_element` alude a la acción del síntoma. Las relacionadas se comparan contra hermanos **siempre**. Las no relacionadas se listan en 5D y se agrupan en una sola fila (ver Paso 4).
@@ -151,6 +159,8 @@ Checklist: (1) capacidad exacta (crear, aplicar, automatizar, parcial, por cuota
 **Prohibido** concluir solo con el core: validar Core → Proyecto (triggers y extensiones) → Negocio (workaround). Prioridad de evidencia: código del proyecto > comportamiento core genérico.
 
 **Matriz de capacidades** (en §3–5): Sub-capacidad | Sí/No/Parcial | condición/evidencia. **Veredicto global:** SÍ, NO, PARCIAL o SÍ CON CONDICIONES, nunca ambiguo.
+
+**Corrección técnica de administrador en viabilidad:** si el procedimiento para habilitar la capacidad exige alguna condición del Paso 2.12 (Diccionario de la Aplicación, rol System Administrator, registro del cliente System, compilación), aplicar la misma regla: el procedimiento técnico va en §5–6 y la §7 usa la variante de viabilidad de la plantilla C.
 
 **Enrutamiento por dominio:**
 
@@ -186,7 +196,7 @@ Dominio no claro → declararlo en §9 y bajar confianza. Los nombres de módulo
 
 ## Paso 4 — Formato de respuesta: incidencia (siempre en este orden)
 
-**§1 Clasificación** — Tipo · Subtipo · Confianza · ¿Requiere desarrollo? · Sub-casos (si aplica)
+**§1 Clasificación** — Tipo · Subtipo · Confianza · ¿Requiere desarrollo? · Corrección técnica de administrador: Sí/No (condición del Paso 2.12) · Sub-casos (si aplica)
 **§2 Entendimiento del requerimiento**
 **§3 Diagnóstico técnico**
 **§4 Causa raíz** — cuatro niveles, obligatorios cuando la evidencia alcance (si uno no se pudo determinar, declararlo, no colapsarlo):
@@ -210,9 +220,9 @@ Dominio no claro → declararlo en §9 y bajar confianza. Los nombres de módulo
 - **Evidencia compuesta:** si el caso se aparta en más de una columna, reportarlas juntas como una causa y corregirlas todas en el mismo ajuste.
 - **Camino completo:** §4 y 5D listan todas las hipótesis evaluadas, también las descartadas.
 
-**§5 Plan de solución (consultor)** — A. Corrección inmediata paso a paso (si hay cambio de datos: **script SQL sugerido** con `SELECT` de localización + escritura acotada; sin BD, plantilla con placeholders y condición de ejecución) · B. Workaround vs solución definitiva, etiquetados por separado (omitir si no aplica) · C. Validaciones previas y **verificación posterior** (qué consulta o qué acción en pantalla demuestra que quedó resuelto) · D. Riesgos/controles, incluido el **impacto del cambio** (Paso 2.8) con el número medido.
-**§6 Escalamiento** — antes de recomendar cambiar un campo como solución de fondo, confirmar que es **el mismo nombre de columna** que quedó Confirmada (módulos distintos pueden tener campos de nombre parecido e independientes). Las filas Complementarias e Informativas pasan obligatoriamente a §7.
-**§7 Respuesta sugerida al usuario final** — obligatoria siempre (plantilla abajo). Sin SQL, tablas, columnas ni IDs técnicos. Si el usuario puede resolverlo por la interfaz: ruta de menú completa y pasos.
+**§5 Plan de solución (consultor)** — A. Corrección inmediata paso a paso (si hay cambio de datos: **script SQL sugerido** con `SELECT` de localización + escritura acotada; sin BD, plantilla con placeholders y condición de ejecución) · B. Workaround vs solución definitiva, etiquetados por separado (omitir si no aplica) · C. Validaciones previas y **verificación posterior** (qué consulta o qué acción en pantalla demuestra que quedó resuelto) · D. Riesgos/controles, incluido el **impacto del cambio** (Paso 2.8) con el número medido. Con `CORRECCION_TECNICA_ADMIN = Sí`, §5.A es el **procedimiento técnico completo para el administrador** (rol requerido, ruta del Diccionario o ventana de sistema, registro y código interno, valor actual y nuevo, módulo En desarrollo y su reversión, export/compilación si aplica, verificación técnica): es la única ubicación de esos pasos.
+**§6 Escalamiento** — antes de recomendar cambiar un campo como solución de fondo, confirmar que es **el mismo nombre de columna** que quedó Confirmada (módulos distintos pueden tener campos de nombre parecido e independientes). Las filas Complementarias e Informativas pasan obligatoriamente a §7. Con `CORRECCION_TECNICA_ADMIN = Sí`: indicar que la ejecuta un técnico con rol System Administrator, qué debe evaluar antes de aplicarla (impacto 2.8, si el módulo es propio o de terceros, si el cambio debe versionarse en el repo) y que el cliente no debe realizarla.
+**§7 Respuesta sugerida al usuario final** — obligatoria siempre (plantilla abajo). Sin SQL, tablas, columnas ni IDs técnicos. Si el usuario puede resolverlo por la interfaz: ruta de menú completa y pasos. Si `CORRECCION_TECNICA_ADMIN = Sí`: plantilla C, sin pasos de administración.
 **§8 Prevención**
 **§9 Datos faltantes / evidencia**
 
@@ -280,7 +290,38 @@ Respecto a su consulta sobre [operación]:
 - [Qué evitar.]
 ```
 
-**Reglas de §7 (ambos subtipos):** nombrar la **ruta de menú completa** confirmada en 5C cuando la solución sea una acción en pantalla — si no se confirmó, declararlo en §9, nunca inventarla ni decir "consulte a su consultor" · campos por su **etiqueta en pantalla** confirmada (`ad_field_trl`/`ad_element_trl`), nunca por nombre de columna · todo cambio de valor con **valor actual y valor nuevo exacto** (fórmulas completas, no "agregar X") · si la causa es una regla de configuración (aun "comportamiento esperado"), decir **dónde se configura** · toda frase "alineado con X"/"comportamiento esperado" debe corresponder a una hipótesis Descartada con **todas** sus columnas relacionadas probadas · el bloque de acciones se titula siempre **"Solución a aplicar o verificar"** · incluir siempre **"Cómo verificar que quedó resuelto"** (o "Cómo comprobar el resultado" en viabilidad) y, en incidencia, **"Si después de aplicarlo el problema continúa"** · en viabilidad, sin lista "Detalle por capacidad" (la matriz va en §3–5) · cerrar con **Importante** breve; nunca escalar a soporte como única salida · si el usuario necesita el paso a paso en pantalla, invitar a **GUIA OPERATIVA** · **única excepción a "sin tablas ni columnas":** cuando el ticket pide expresamente la estructura de BD (tablas/columnas de una ventana), esos nombres, confirmados en el esquema del cliente, son la respuesta y van en §7 · **prueba de no repetición:** si "Qué identificamos" y "Por qué ocurre" se podrían escribir solo con el texto del ticket, la §7 no es válida porque falta el mecanismo (Paso 2.9) o la cadena causal (Paso 2.10). Se rehace con el mecanismo o, si no se confirmó, se dice en lenguaje llano qué se revisó y descartó, qué condición queda por confirmar y quién la revisará. En ningún caso se presenta como hallazgo lo que el usuario ya dijo · **la cadena causal va en §7:** "Qué identificamos" y "Por qué ocurre" traducen a lenguaje del cliente la §4 completa (del origen al efecto). Una causa que está en §4 y no aparece en §7 es un error. Si la causa terminal no se alcanzó, "Por qué ocurre" llega hasta el nivel confirmado y dice en lenguaje llano qué parte sigue en revisión técnica.
+**C. Corrección técnica de administrador** (obligatoria cuando `CORRECCION_TECNICA_ADMIN = Sí`, Paso 2.12; reemplaza los pasos de la plantilla A o el procedimiento de la B). El cliente debe entender la causa, saber que la corrección es técnica, que el equipo la evaluará antes de aplicarla y que no debe hacer nada; nunca recibe los pasos de administración:
+
+```markdown
+[Saludo breve.] Revisamos el caso y encontramos la causa: [una oración en lenguaje de negocio, sin códigos internos ni nombres de módulos].
+
+**Qué identificamos**
+[Qué configuración del sistema produce lo que el usuario ve, en lenguaje de negocio. Se nombra lo que el usuario reconoce en su pantalla (ventana operativa, campo, opción); nunca códigos de búsqueda, nombres de referencias, módulos, tablas ni ventanas del Diccionario de la Aplicación.]
+
+**Por qué ocurre**
+1. [Origen, en lenguaje llano: "la opción está definida en la configuración interna del sistema con el nombre X".]
+2. [Cómo eso llega a la pantalla del usuario.]
+3. [Efecto que el usuario reportó.]
+
+**Solución a aplicar o verificar**
+Esta corrección es de **nivel técnico**: se realiza en la configuración interna del sistema y solo puede aplicarla el equipo de administración del sistema. Nuestro equipo técnico **evaluará el cambio** [y su efecto en: registros o procesos existentes, si aplica] antes de aplicarlo y le confirmaremos por este ticket cuando esté listo. **No es necesario que usted realice ninguna modificación.**
+
+**Cómo verificar que quedó resuelto**
+- Cuando le confirmemos que el cambio fue aplicado: [acción que el usuario sí puede hacer con su rol habitual y resultado visible esperado, ej. "cierre sesión, ingrese de nuevo y en Nueva oportunidad confirme que el campo X muestra Y"].
+
+**Si después de aplicarlo el problema continúa**
+- Responda a este ticket indicando [dato exacto: captura de la ventana X, nº de documento, mensaje].
+
+**Importante**
+- [Impacto en lo ya registrado, en lenguaje llano, ej. "las oportunidades registradas conservarán su información".]
+- [Si aplica: "Le pedimos no intentar este cambio desde su usuario: requiere permisos de administración y un ajuste técnico."]
+```
+
+Variante viabilidad: la primera línea responde SÍ/NO/PARCIAL como en la plantilla B, y el bloque **Procedimiento recomendado** se sustituye por el párrafo de corrección técnica en evaluación de esta plantilla.
+
+**Reglas de la plantilla C:** prohibido en §7 cualquier ruta, ventana, pestaña o campo del Diccionario de la Aplicación o de administración del sistema, la indicación de marcar un módulo En desarrollo, códigos internos (código de búsqueda, `value`, nombres de referencias, `SSIH_*` y similares), nombres técnicos de módulos y el rol System Administrator como instrucción. Sí se permite decir en lenguaje llano que requiere permisos de administración. "Qué identificamos" y "Por qué ocurre" siguen siendo obligatorios y deben explicar la causa (no es un aviso vacío). Todos esos detalles técnicos van en §5.A y §6.
+
+**Reglas de §7 (ambos subtipos):** **antes de todo, aplicar el Paso 2.12: con `CORRECCION_TECNICA_ADMIN = Sí` se usa la plantilla C y las reglas siguientes sobre ruta de menú, etiqueta de campo y valor exacto aplican solo a "Cómo verificar que quedó resuelto" (lo que el usuario ve con su rol habitual), nunca a los pasos de la corrección** · nombrar la **ruta de menú completa** confirmada en 5C cuando la solución sea una acción en pantalla — si no se confirmó, declararlo en §9, nunca inventarla ni decir "consulte a su consultor" · campos por su **etiqueta en pantalla** confirmada (`ad_field_trl`/`ad_element_trl`), nunca por nombre de columna · todo cambio de valor con **valor actual y valor nuevo exacto** (fórmulas completas, no "agregar X") · si la causa es una regla de configuración (aun "comportamiento esperado"), decir **dónde se configura** · toda frase "alineado con X"/"comportamiento esperado" debe corresponder a una hipótesis Descartada con **todas** sus columnas relacionadas probadas · el bloque de acciones se titula siempre **"Solución a aplicar o verificar"** · incluir siempre **"Cómo verificar que quedó resuelto"** (o "Cómo comprobar el resultado" en viabilidad) y, en incidencia, **"Si después de aplicarlo el problema continúa"** · en viabilidad, sin lista "Detalle por capacidad" (la matriz va en §3–5) · cerrar con **Importante** breve; nunca escalar a soporte como única salida · si el usuario necesita el paso a paso en pantalla, invitar a **GUIA OPERATIVA** · **única excepción a "sin tablas ni columnas":** cuando el ticket pide expresamente la estructura de BD (tablas/columnas de una ventana), esos nombres, confirmados en el esquema del cliente, son la respuesta y van en §7 · **prueba de no repetición:** si "Qué identificamos" y "Por qué ocurre" se podrían escribir solo con el texto del ticket, la §7 no es válida porque falta el mecanismo (Paso 2.9) o la cadena causal (Paso 2.10). Se rehace con el mecanismo o, si no se confirmó, se dice en lenguaje llano qué se revisó y descartó, qué condición queda por confirmar y quién la revisará. En ningún caso se presenta como hallazgo lo que el usuario ya dijo · **la cadena causal va en §7:** "Qué identificamos" y "Por qué ocurre" traducen a lenguaje del cliente la §4 completa (del origen al efecto). Una causa que está en §4 y no aparece en §7 es un error. Si la causa terminal no se alcanzó, "Por qué ocurre" llega hasta el nivel confirmado y dice en lenguaje llano qué parte sigue en revisión técnica.
 
 ---
 
@@ -298,7 +339,7 @@ Respecto a su consulta sobre [operación]:
 1. **Ubicar** los archivos del módulo candidato en el repo: listar directorios (`get_file_contents` sobre `modules/<módulo>/…`, `src-db/database/model/functions`, `…/triggers`, `src`) o usar la búsqueda de código del MCP GitHub restringida al repo del cliente (nombre de función, trigger, mensaje literal, `AD_MESSAGE`). Las rutas de la tabla "Technical" de los archivos de `conocimiento_comun/modulos/` sirven para ir directo. Confirmar el módulo instalado y su versión en `ad_module` cuando haya BD.
 2. **Leer** triggers y funciones PL/SQL (BD desplegada; repo como apoyo), clases Java de proceso y el Application Dictionary (`AD_COLUMN`, `AD_FIELD`, `AD_PROCESS`, `AD_MENU`, `AD_WINDOW`) del módulo. Es la fuente que resuelve la mayoría de causas de lógica y datos.
 3. Anotar para 5D: ventanas, procesos, mensajes literales y restricciones encontradas.
-4. **Verificar respaldo en código:** un workaround sin código que lo respalde no va a §7 como acción principal si existe alternativa con código (ej. proceso **Generar NC** con `AD_PROCESS` real vs NC manual). Si existe ventana o proceso estándar para corregir el dato, priorizarlo en §7; el script SQL queda como respaldo en §5–6. Si la corrección es un valor de configuración de interfaz (fórmula, parámetro, flag): consultar el valor actual, construir el valor nuevo exacto siguiendo el patrón de los hermanos (Paso 2.7), medir su impacto (Paso 2.8) y dejarlo en el script de respaldo y, en lenguaje llano, en §7.
+4. **Verificar respaldo en código:** un workaround sin código que lo respalde no va a §7 como acción principal si existe alternativa con código (ej. proceso **Generar NC** con `AD_PROCESS` real vs NC manual). Si existe ventana o proceso estándar para corregir el dato, priorizarlo en §7; el script SQL queda como respaldo en §5–6. Si la corrección es un valor de configuración de interfaz (fórmula, parámetro, flag): consultar el valor actual, construir el valor nuevo exacto siguiendo el patrón de los hermanos (Paso 2.7), medir su impacto (Paso 2.8) y dejarlo en el script de respaldo y, en lenguaje llano, en §7. Si esa ventana o proceso es del Diccionario de la Aplicación o exige rol System Administrator (Paso 2.12), "priorizarlo en §7" significa priorizarlo en §5.A como procedimiento del administrador; la §7 usa la plantilla C.
 5. Repo inaccesible o raíz del código no detectada → declararlo en §9 y bajar confianza. **Excepción:** la lectura de código desplegado (5A.0) y la comparación de maestros por introspección de BD (7-bis) se ejecutan igual.
 6. **Rastreo del componente exacto:** no fijar la causa raíz sobre un archivo no confirmado como el que interviene. Reconstruir la cadena: ventana/proceso/botón → definición (`AD_PROCESS`, `AD_REPORTVIEW` o el proceso configurado; con BD, consultar el registro del diccionario para obtener clase Java, procedimiento o reporte asociado) → plantilla/consulta/función exacta (jrxml, SQL) → triggers/funciones/clases involucradas. Cada eslabón se confirma leyendo código o configuración real, nunca por parecido de nombre o de módulo. Si un eslabón no se confirma: `COMPONENTE_NO_CONFIRMADO` en §9 y la causa queda como hipótesis para un técnico.
 7. **Precedentes** (ticket previo, playbook, caso parecido): son hipótesis, nunca conclusión. Antes de adoptarlos, verificar contra la fuente un dato concreto **de este caso** que el mecanismo del precedente exija. Si lo contradice, descartarlo explícitamente en §1 y §4.
@@ -333,7 +374,7 @@ Archivos por módulo: `01-Facturacion-Electronica`, `02-Retenciones`, `03-Pagos-
 2. Sin BD: confirmar en `AD_FIELD`/`AD_PROCESS`/`AD_MENU`/`AD_WINDOW` del módulo en el repo (el XML trae el nombre base; la traducción puede no estar).
 3. Si no cierra: revisar triggers/funciones o Java.
 4. No confirmado → declararlo en §9 ("ventana no confirmada — requiere validación de un técnico"); nunca inventar.
-5. Causa = regla de configuración: resolver dónde se define (ruta de menú + pestaña + etiqueta del campo, o tabla/columna) y citarlo en §4/§5; ofrecerlo en §7 como paso opcional.
+5. Causa = regla de configuración: resolver dónde se define (ruta de menú + pestaña + etiqueta del campo, o tabla/columna) y citarlo en §4/§5; ofrecerlo en §7 como paso opcional, salvo que esa configuración sea de administrador (Paso 2.12): entonces se cita solo en §4/§5 y la §7 dice que es un ajuste técnico.
 
 ### 5D. Evidencia (obligatoria en §5)
 
@@ -347,6 +388,7 @@ Archivos por módulo: `01-Facturacion-Electronica`, `02-Retenciones`, `03-Pagos-
 - Dato que distingue (Paso 2.11): nombrado Sí/No aplica, ventana y registro o valor que difiere del caso OK, o "ninguna entrada difiere y el fallo se reproduce igual".
 - Cadena causal (Paso 2.10): cada nivel con el paso que lo produjo, la evidencia (consulta, `created`/`ad_pinstance`, archivo o función) y el resultado de su simulación; causa terminal alcanzada Sí o `CAUSA_TERMINAL_NO_ALCANZADA` + motivo.
 - Impacto del cambio propuesto (Paso 2.8): número de registros/procesos afectados y consulta usada, o "no aplica" con motivo.
+- Corrección técnica de administrador (Paso 2.12): Sí/No, condición que se cumplió (Diccionario, cliente System, `accesslevel`, acceso por rol, compilación) y la consulta que lo confirmó.
 - Matriz completa: referenciar la de §4 (cuántos registros y campos), sin repetirla.
 
 ---
@@ -357,7 +399,8 @@ Para el paso a paso en pantalla: **GUIA OPERATIVA** / **CREA FLUJO** → skill `
 
 ## Uso desde `triage-glpi-auto`
 
+- **§7 en dos bloques:** el orquestador puede publicar por separado el **bloque diagnóstico** (saludo con la causa, "Qué identificamos", "Por qué ocurre") y el **bloque solución** (desde "Solución a aplicar o verificar" hasta "Importante"). Con score menor a 90 solo el diagnóstico es público y la solución queda privada (orquestador 6.3 y 6.3-bis). Por eso el bloque diagnóstico debe entenderse por sí solo: sin pasos, rutas de menú, valores a cambiar ni referencias como "ver los pasos abajo".
 - El documento de 9 secciones y su §7 son **únicos por ticket y corrida**: cualquier profundización (Paso 5-B del orquestador) se incorpora aquí **antes** de redactar §7, nunca como segunda versión ni comentario de corrección.
-- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/2.10/2.11/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
+- Las obligaciones de este motor (1.5, 2.0/2.7/2.8/2.9/2.10/2.11/2.12/7-bis, 5A.0, 5A.6, 5A.7, 5C) se ejecutan siempre, sean o no repetidas por el orquestador.
 - **Contrato ancla A:** con error SQL/constraint/`ERROR=` al Completar/Registrar/Procesar, la auditoría de `ad_pinstance` debe estar hecha antes de permitir score ≥ 90 o un cierre como "comportamiento esperado"; si queda `OMITIDO` o contradice el cierre, se baja confianza y el orquestador aplica el tope de score (su Paso 6.1).
-- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7, sub-casos, mecanismo confirmado, dato que distingue al KO del OK (Paso 2.11), niveles de la cadena causal y si se alcanzó la causa terminal, y si la §7 aporta un hallazgo distinto del síntoma reportado y explica la causa.
+- El motor entrega al orquestador, junto al documento, los datos para su **bloque de evidencia** (Paso 5-C del orquestador): tipo de caso, ancla, estado de `ad_pinstance`, componente confirmado, ventana y ruta confirmadas, comparación contra pares, estado repo vs BD, script incluido, verificación incluida en §7, sub-casos, mecanismo confirmado, dato que distingue al KO del OK (Paso 2.11), niveles de la cadena causal y si se alcanzó la causa terminal, si la §7 aporta un hallazgo distinto del síntoma reportado y explica la causa, y si la corrección es técnica de administrador (Paso 2.12) con la plantilla C aplicada en §7.

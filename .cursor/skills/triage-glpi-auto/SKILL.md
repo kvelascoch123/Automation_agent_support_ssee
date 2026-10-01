@@ -5,7 +5,7 @@ description: Agente orquestador de triage automático de tickets GLPI (multi-cli
 
 # Agente Orquestador de Triage GLPI — ejecución automática
 
-**Versión de la skill:** `triage-2026-09-29.4` (se registra en el log junto a la versión del motor).
+**Versión de la skill:** `triage-2026-10-01.2` (se registra en el log junto a la versión del motor).
 
 Corre sin intervención humana y sin pedir confirmación. Está vinculado al **repo orquestador**; los repos de código de cada cliente se leen dinámicamente vía **MCP GitHub**.
 
@@ -110,7 +110,7 @@ SELECT name, content, status FROM glpi_tickets WHERE id = {ticket_id};
 Revisar también el último registro de `sidesoft_triage_glpi_log` del ticket. Evaluar en este orden:
 
 ### 4.-1 — Corrida duplicada
-Si `bot.glpi` publicó en los **últimos 15 minutos** un `[TRIAGE-SLA-SCORE]`, un `[TRIAGE-ANALISIS-9PASOS]`, una Solución al Caso (encabezado `SOLUCIÓN AL CASO`, o tarea `ANÁLISIS INICIAL`, o tag legado `[TRIAGE-RESPUESTA-SUGERIDA]`) o unas `PREGUNTAS DE ACLARACIÓN`, sin respuesta nueva del solicitante después → no publicar nada, registrar `duplicado_abortado` con el id del comentario existente y terminar. (La causa de fondo de las corridas concurrentes está en el disparador de n8n; este paso solo contiene el síntoma.)
+Si `bot.glpi` publicó en los **últimos 15 minutos** un `[TRIAGE-SLA-SCORE]`, un `[TRIAGE-ANALISIS-9PASOS]`, una Solución al Caso (encabezado `SOLUCIÓN AL CASO`, o tarea `ANÁLISIS INICIAL` o `CORRECCIÓN TÉCNICA EN EVALUACIÓN`, o followup `[TRIAGE-SOLUCION-PROPUESTA]`, o tag legado `[TRIAGE-RESPUESTA-SUGERIDA]`) o unas `PREGUNTAS DE ACLARACIÓN`, sin respuesta nueva del solicitante después → no publicar nada, registrar `duplicado_abortado` con el id del comentario existente y terminar. (La causa de fondo de las corridas concurrentes está en el disparador de n8n; este paso solo contiene el síntoma.)
 
 ### 4.0 — Caso Capacitación
 Solo si el bot aún no actuó en el ticket. Si el asunto o la descripción contienen (sin distinguir mayúsculas ni tildes) `capacitac`, `entrenamiento` o `training`:
@@ -270,6 +270,8 @@ Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpo
 
 **§7:** se rige por las plantillas y reglas de §7 del motor (sin SQL, tablas, columnas ni IDs; ruta de menú completa y etiqueta del campo confirmadas o declaradas en §9; valor actual y valor nuevo exacto; camino operativo estándar antes que script; dónde se configura la regla; Complementarias e Informativas en "Otras opciones a considerar"; bloque "Solución a aplicar o verificar"; "Cómo verificar que quedó resuelto" y "Si después de aplicarlo el problema continúa"). En un caso operativo la solución completa va en §7; SQL y escalamiento solo en §5–6. Si 5-B separó workaround y definitiva, §7 refleja ambos en lenguaje operativo. Cambio de un valor de configuración de interfaz: §7 indica ruta, campo y el valor final exacto en lenguaje llano, con el script en 6-B.
 
+**Corrección técnica de administrador (motor Paso 2.12):** si la corrección se hace en el Diccionario de la Aplicación (Módulo En desarrollo, Referencia/Lista de valores, Ventana, Campo, Columna, Elemento, Proceso, Mensaje, Menú y sus traducciones), en un registro del cliente System, en una ventana solo accesible con rol System Administrator, o exige export/compilación, la §7 usa la **plantilla C del motor**: explica la causa en lenguaje de negocio e indica que es una corrección de nivel técnico que el equipo evaluará antes de aplicar, sin ningún paso de administración, código interno ni nombre de módulo. El procedimiento técnico completo queda **solo** en el análisis privado (6.2, §5.A y §6). El usuario final nunca recibe instrucciones para modificar el diccionario ni configuraciones de administrador, aunque el score sea alto.
+
 **Producto:** documento de 9 secciones (Clasificación, Entendimiento, Diagnóstico técnico, Causa raíz, Plan de solución, Escalamiento, **§7 Respuesta sugerida**, Prevención, Datos faltantes/Evidencia), subtipo Incidencia o Viabilidad.
 
 ### 5-C — Bloque de evidencia y gate de publicación
@@ -277,16 +279,17 @@ Se aplica **durante** el motor y **antes de publicar**; todo hallazgo se incorpo
 Antes de publicar, armar el bloque de evidencia (JSON compacto, sin punto y coma) con lo que el documento **realmente** contiene:
 
 ```json
-{"version_skill":"triage-2026-09-29.4/motor-2026-09-29.4","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
+{"version_skill":"triage-2026-10-01.2/motor-2026-10-01.2","subtipo":"Incidencia","tipo_caso":"Configuracion","subcasos":1,
  "ancla":"C","ad_pinstance":"NO APLICA","codigo":"LEIDO","repo_vs_bd":"IGUAL","componente_confirmado":true,"componente_fuente":"BD",
  "causa_en_maestro":true,"comparacion_pares":"COMPARADO","cierre_comportamiento_esperado":false,
  "mecanismo_confirmado":true,"dato_distingue":"NOMBRADO","hallazgo_distinto_al_sintoma":true,"niveles_causa":3,"causa_terminal":true,"s7_explica_causa":true,
  "accion_en_pantalla":true,"ruta_menu_confirmada":true,"requiere_cambio_datos":false,"script_incluido":false,
+ "correccion_tecnica_admin":false,"s7_sin_pasos_admin":true,
  "verificacion_en_s7":true,"secciones_completas":true,"score_propuesto":92,"score_final":92,
  "gate_resultado":"aprobado","gate_reglas":[]}
 ```
 
-Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura/Viabilidad · `codigo` = estado de la fila de código de 5-EVIDENCIA · `repo_vs_bd` ∈ IGUAL/REPO_DESACTUALIZADO/SOLO_BD/SOLO_REPO/NO_APLICA · `componente_fuente` ∈ BD/REPO/AMBOS/NO_APLICA · `comparacion_pares` ∈ COMPARADO/SIN PARES/PENDIENTE · `mecanismo_confirmado` = el motor reprodujo o demostró la condición que produce el síntoma (Paso 2.9 o auditoría 1.5) · `hallazgo_distinto_al_sintoma` = la §7 contiene al menos una condición concreta (dato, configuración o lógica) que **no** aparece en el texto del ticket · `niveles_causa` = número de niveles de la cadena causal (motor 2.10) · `causa_terminal` = se llegó a un registro, parámetro o acción que el usuario puede corregir, o a un defecto que ocurre también con las mismas entradas que un caso OK. Nombrar solo el botón o el proceso que el usuario ya señaló no pone `causa_terminal` en true · `dato_distingue` ∈ NOMBRADO/NO_APLICA/OMITIDO (motor 2.11). NOMBRADO exige la ventana y el valor que difiere del caso OK · `s7_explica_causa` = la §7 contiene "Qué identificamos" y "Por qué ocurre" con esa causa, no con el síntoma repetido.
+Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura/Viabilidad · `codigo` = estado de la fila de código de 5-EVIDENCIA · `repo_vs_bd` ∈ IGUAL/REPO_DESACTUALIZADO/SOLO_BD/SOLO_REPO/NO_APLICA · `componente_fuente` ∈ BD/REPO/AMBOS/NO_APLICA · `comparacion_pares` ∈ COMPARADO/SIN PARES/PENDIENTE · `mecanismo_confirmado` = el motor reprodujo o demostró la condición que produce el síntoma (Paso 2.9 o auditoría 1.5) · `hallazgo_distinto_al_sintoma` = la §7 contiene al menos una condición concreta (dato, configuración o lógica) que **no** aparece en el texto del ticket · `niveles_causa` = número de niveles de la cadena causal (motor 2.10) · `causa_terminal` = se llegó a un registro, parámetro o acción que el usuario puede corregir, o a un defecto que ocurre también con las mismas entradas que un caso OK. Nombrar solo el botón o el proceso que el usuario ya señaló no pone `causa_terminal` en true · `dato_distingue` ∈ NOMBRADO/NO_APLICA/OMITIDO (motor 2.11). NOMBRADO exige la ventana y el valor que difiere del caso OK · `s7_explica_causa` = la §7 contiene "Qué identificamos" y "Por qué ocurre" con esa causa, no con el síntoma repetido · `correccion_tecnica_admin` = resultado del motor Paso 2.12 (la corrección exige Diccionario de la Aplicación, cliente System, rol System Administrator o compilación) · `s7_sin_pasos_admin` = la §7 no contiene rutas ni ventanas del Diccionario o de administración, indicación de módulo En desarrollo, códigos internos ni nombres técnicos de módulo (solo se evalúa con `correccion_tecnica_admin = true`).
 
 **Gate (se aplica en orden, el score final es el menor tope alcanzado):**
 
@@ -305,8 +308,9 @@ Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura
 | G11 | `mecanismo_confirmado = true` y `causa_terminal = false` | **bloqueado** una vez: volver al motor Paso 2.10 y bajar un nivel más (paso anterior + simulación). Si tras ese intento la evidencia sigue agotada, score máx. 84 con el nivel faltante declarado en §9 y en "Por qué ocurre" |
 | G12 | `s7_explica_causa = false` | **bloqueado**: la §7 (y por tanto el canal 6.3) debe incluir "Qué identificamos" y "Por qué ocurre" |
 | G13 | hay un caso OK comparable y `dato_distingue` ≠ NOMBRADO, o la §7 solo nombra el proceso que el usuario ya señaló | **bloqueado** una vez: ejecutar el motor Paso 2.11 y rehacer la §7 con el registro o valor que distingue al caso |
+| G14 | `correccion_tecnica_admin = true` y `s7_sin_pasos_admin = false` | **bloqueado**: rehacer la §7 con la plantilla C del motor y mover los pasos de administración a §5.A/§6. No altera el score |
 
-- Un bloqueo se resuelve completando el documento **una vez**; si sigue bloqueado, se publica con score máx. 70 y `gate_resultado = bloqueado`.
+- Un bloqueo se resuelve completando el documento **una vez**; si sigue bloqueado, se publica con score máx. 70 y `gate_resultado = bloqueado`. **Excepción G14:** si tras rehacerla la §7 aún contiene pasos de administración, no se publica ningún canal público (6.3), el análisis queda solo privado y se registra `gate_resultado = bloqueado` con `G14`.
 - Cualquier tope aplicado → `gate_resultado = degradado` y las reglas en `gate_reglas`. Sin topes → `aprobado`.
 - La justificación del score en 6.1 cita las reglas del gate aplicadas.
 - El bloque va al log (`evidencia_json`), no a GLPI.
@@ -315,7 +319,7 @@ Valores: `tipo_caso` ∈ Operativo/Configuracion/Integracion/Bug/Infraestructura
 
 ## Paso 6 — Publicar (sin confirmación)
 
-Vía `glpi`, autor `users_id = 148`. Todo comentario es **privado** (`is_private = 1`) salvo tres excepciones públicas dirigidas al solicitante: el comentario de Capacitación (4.0), las **Preguntas de aclaración** (4.4) y la **tarea `ANÁLISIS INICIAL`** (6.3, score 81–89). No se publica comentario de "primer contacto".
+Vía `glpi`, autor `users_id = 148`. Todo comentario es **privado** (`is_private = 1`) salvo cuatro excepciones públicas dirigidas al solicitante: el comentario de Capacitación (4.0), las **Preguntas de aclaración** (4.4), la **tarea `ANÁLISIS INICIAL`** (6.3, score 71–89, solo diagnóstico sin pasos) y la **tarea `CORRECCIÓN TÉCNICA EN EVALUACIÓN`** (6.3, corrección técnica de administrador con score 81–100). No se publica comentario de "primer contacto".
 
 ### 6.1 — `[TRIAGE-SLA-SCORE]` (privado)
 Un solo comentario con: Nivel SLA · Criticidad · Área funcional · Tiempo estimado de revisión inicial · Score de acertividad (0–100) · Justificación del rango (incluidas las reglas del gate 5-C aplicadas) · **Asignación** (usuario, perfil y motivo con los números de 6.4). En reanálisis, primera línea `Reanálisis N`.
@@ -350,29 +354,58 @@ El documento completo en HTML para consultor/técnico (puede incluir SQL, IDs, m
 - Cambio de datos en BD → el **script sugerido** (6-B) va en §5/§6, con `SELECT` de localización + escritura acotada o plantilla con placeholders. Si el usuario puede hacerlo por interfaz, §7 da ruta y pasos; el script queda como respaldo.
 
 ### 6.3 — Canal adicional según score
-Copia la **§7 completa** (que ya está en 6.2), en su mismo orden: saludo con la causa en una oración, **Qué identificamos**, **Por qué ocurre**, **Solución a aplicar o verificar**, "Mientras se aplica la corrección" si existe, **Cómo verificar que quedó resuelto**, **Si después de aplicarlo el problema continúa**, "Otras opciones a considerar" si existe e **Importante**. Nunca se publica solo la parte de pasos: el cliente debe entender qué está pasando y por qué. `TRIAGE-RESPUESTA-SUGERIDA` es solo el nombre interno: **nunca** se escribe en el contenido; el contenido inicia con el encabezado visible del rango.
+La §7 (que ya está en 6.2) se divide en dos bloques:
+- **Bloque diagnóstico:** saludo con la causa en una oración, **Qué identificamos** y **Por qué ocurre**.
+- **Bloque solución:** **Solución a aplicar o verificar**, "Mientras se aplica la corrección" si existe, **Cómo verificar que quedó resuelto**, **Si después de aplicarlo el problema continúa**, "Otras opciones a considerar" si existe e **Importante**.
 
-| Score | Canal | Visibilidad | Encabezado visible |
-|---|---|---|---|
-| 90–100 | Solución del ticket (`glpi_itilsolutions`) | según GLPI | `SOLUCIÓN AL CASO` |
-| 81–89 | Tarea (`glpi_tickettasks`), `actiontime = 600`, `state = 2`, `users_id_tech = 148` | **Pública** | `ANÁLISIS INICIAL` |
-| 71–80 | Followup | Privado | `SOLUCIÓN AL CASO` |
-| 0–70 | No se publica canal adicional | — | — |
+Qué se publica depende del score final:
+- **Score 90–100:** una sola publicación con la **§7 completa** (diagnóstico + solución), en su mismo orden.
+- **Score 71–89:** el canal **público** lleva **solo el bloque diagnóstico** más la **nota de análisis inicial**. Inmediatamente después se publica el bloque solución en un **followup privado** aparte (6.3-bis). En el canal público no va ningún paso, ruta de menú, valor a cambiar ni instrucción para resolver el ticket.
+- **Score 0–70:** nada público (G9).
+
+Nunca se publica solo la parte de pasos: el cliente siempre recibe el porqué. `TRIAGE-RESPUESTA-SUGERIDA` es solo el nombre interno: **nunca** se escribe en el contenido; el contenido inicia con el encabezado visible del rango.
+
+**Nota de análisis inicial** (cierre obligatorio del canal público con score 71–89; texto base, adaptable al caso sin cambiar el sentido):
+```
+Este es el primer análisis realizado sobre su caso. Se lo detallamos para que lo tenga en cuenta. En base a este diagnóstico, nuestro equipo continuará analizando el caso y le informaremos por este mismo ticket los siguientes pasos.
+```
+
+| Score | Canal público | Visibilidad | Encabezado visible | Contenido |
+|---|---|---|---|---|
+| 90–100 | Solución del ticket (`glpi_itilsolutions`) | según GLPI | `SOLUCIÓN AL CASO` | §7 completa |
+| 71–89 | Tarea (`glpi_tickettasks`), `actiontime = 600`, `state = 2`, `users_id_tech = 148` | **Pública** | `ANÁLISIS INICIAL` | Bloque diagnóstico + nota de análisis inicial |
+| 0–70 | No se publica canal adicional | — | — | — |
+
+#### 6.3-bis — `[TRIAGE-SOLUCION-PROPUESTA]` (privado, score 71–89)
+Followup privado (`is_private = 1`) publicado **después** de la tarea `ANÁLISIS INICIAL`, que inicia con `[TRIAGE-SOLUCION-PROPUESTA]` y el encabezado visible `<b>SOLUCIÓN PROPUESTA - USO INTERNO</b>`. Contiene el **bloque solución** de la §7 íntegro (mismos pasos, rutas y valores que habría recibido el cliente), para que el responsable asignado lo valide, lo complete y decida cuándo y cómo comunicarlo. Si supera ~3,2 KB, dividir como en 6.2. Solo se publica si la tarea pública quedó verificada (6-A).
+
+**Corrección técnica de administrador (`correccion_tecnica_admin = true`) — tiene prioridad sobre la tabla anterior:**
+
+| Score | Canal | Visibilidad | Encabezado visible | Contenido |
+|---|---|---|---|---|
+| 81–100 | Tarea (`glpi_tickettasks`), mismos valores que 81–89 | **Pública** | `CORRECCIÓN TÉCNICA EN EVALUACIÓN` | §7 con plantilla C del motor |
+| 71–80 | Followup | Privado | `SOLUCIÓN AL CASO` | §7 con plantilla C |
+| 0–70 | No se publica canal adicional | — | — | — |
+
+- **Nunca** se publica `glpi_itilsolutions` en este caso, aunque el score sea 90–100: el cambio aún no está aplicado y requiere evaluación técnica. El score se conserva tal cual (refleja la certeza del diagnóstico) y se escribe en 6-C normalmente.
+- El procedimiento de administración (rutas del Diccionario, códigos internos, módulo En desarrollo, export) solo existe en 6.2 privado.
+- Si el contenido público aún contiene pasos de administración tras el gate G14, no se publica (ver G14).
+- Con corrección técnica de administrador no se publica 6.3-bis: la plantilla C no tiene pasos para el cliente y el procedimiento técnico ya está en 6.2.
 
 ```sql
 -- 90–100
 INSERT INTO glpi_itilsolutions (itemtype, items_id, solutiontypes_id, content, date_creation, date_mod, users_id, status)
 VALUES ('Ticket', {ticket_id}, 0, '{respuesta_html}', NOW(), NOW(), 148, 1);
--- 81–89
+-- 71–89 (ANÁLISIS INICIAL) y CORRECCIÓN TÉCNICA EN EVALUACIÓN
 INSERT INTO glpi_tickettasks (tickets_id, taskcategories_id, date, users_id, users_id_editor, content, is_private, actiontime, state, users_id_tech, groups_id_tech, date_creation, date_mod, timeline_position)
 VALUES ({ticket_id}, 0, NOW(), 148, 148, '{respuesta_html}', 0, 600, 2, 148, 0, NOW(), NOW(), 1);
 ```
-Followups (6.1, 6.2, 71–80, aclaración, capacitación):
+Followups (6.1, 6.2, 6.3-bis, aclaración, capacitación):
 ```sql
 INSERT INTO glpi_itilfollowups (itemtype, items_id, date, users_id, users_id_editor, content, is_private, requesttypes_id, date_creation, date_mod, timeline_position)
 VALUES ('Ticket', {ticket_id}, NOW(), 148, 148, '{contenido_html}', {0_o_1}, 0, NOW(), NOW(), 1);
 ```
-En 81–89 el contenido es la §7 en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas. Empieza por la **causa identificada** (nunca por el síntoma que el usuario ya reportó) y conserva "Cómo verificar que quedó resuelto" y "Si después de aplicarlo el problema continúa".
+En 71–89 el contenido público es el bloque diagnóstico en lenguaje claro, sin SQL, IDs internos, marcadores ni hipótesis descartadas, más la nota de análisis inicial. Empieza por la **causa identificada** (nunca por el síntoma que el usuario ya reportó). No incluye "Solución a aplicar o verificar", "Cómo verificar que quedó resuelto", "Si después de aplicarlo el problema continúa", "Otras opciones a considerar" ni "Importante": esos van en 6.3-bis.
 
 ### 6.4 — Estado, campos y asignación
 
@@ -380,20 +413,21 @@ En 81–89 el contenido es la §7 en lenguaje claro, sin SQL, IDs internos, marc
 |---|---|---|---|
 | A | Solución publicada (score 90–100) | 5 Resuelto | según selección |
 | A-1 | Análisis publicado con score 0–89 | 3 Planificado | según selección |
+| A-2 | Corrección técnica de administrador (`correccion_tecnica_admin = true`), cualquier score | 3 Planificado | perfil **Técnico** según selección |
 | B | `preguntas_enviadas` | 4 En espera | consultor según selección |
 | — | Capacitación (4.0) | 3 | kvelasco (63) |
 | — | Proyecto no registrado (2-A) | 3 | bruno díaz (o kvelasco mientras su id sea marcador) |
 | — | `esperando_respuesta_cliente`, `duplicado_abortado`, `error` | sin cambio | sin cambio |
 
-**Un ticket con análisis publicado nunca queda en Nuevo** (n8n busca `status = 1` y lo reprocesaría indefinidamente). En A y A-1:
+**Un ticket con análisis publicado nunca queda en Nuevo** (n8n busca `status = 1` y lo reprocesaría indefinidamente). En A, A-1 y A-2:
 ```sql
 UPDATE glpi_tickets SET itilcategories_id = COALESCE({categoria_id_o_null}, itilcategories_id),
   impact = {impact}, priority = {priority}, status = {status}, date_mod = NOW() WHERE id = {ticket_id};
 ```
 
-**Selección del responsable** (casos A, A-1 y B):
+**Selección del responsable** (casos A, A-1, A-2 y B):
 1. **Perfil del caso:**
-   - **Técnico** (DCAZA, NRIVADENEIRA): lo que falta es 100 % técnico — corrección de código/compilación, script de datos a ejecutar, fallo de proceso/BD con componente confirmado, integración o servicio.
+   - **Técnico** (DCAZA, NRIVADENEIRA): lo que falta es 100 % técnico — corrección de código/compilación, script de datos a ejecutar, fallo de proceso/BD con componente confirmado, integración o servicio, o **corrección técnica de administrador** (Diccionario de la Aplicación o configuración con rol System Administrator).
    - **Consultor** (sconsultor, kquingaluisa): revisión contable, de flujos o de configuración funcional; orientación de uso; o un análisis previo para confirmar si luego se necesita un técnico (hipótesis sin confirmar, score ≤ 70, preguntas de aclaración).
    - **Indeterminado**, o que por su naturaleza debe decidir el coordinador → **kvelasco (63)**, y fin.
 2. Para los dos candidatos del perfil:
@@ -460,9 +494,9 @@ GLPI no aplica estilo a las tablas y `style` con varias declaraciones usa punto 
 
 ### 6-B — Qué escribe este flujo
 **Solo escribe en GLPI:**
-- `glpi_itilfollowups`: comentarios (6.1, 6.2, 71–80, aclaración, capacitación, proyecto no registrado, repo inaccesible, estructura no detectada, límite de reanálisis).
-- `glpi_tickettasks`: `ANÁLISIS INICIAL` (81–89).
-- `glpi_itilsolutions`: `SOLUCIÓN AL CASO` (90–100).
+- `glpi_itilfollowups`: comentarios (6.1, 6.2, 6.3-bis `[TRIAGE-SOLUCION-PROPUESTA]`, admin 71–80, aclaración, capacitación, proyecto no registrado, repo inaccesible, estructura no detectada, límite de reanálisis).
+- `glpi_tickettasks`: `ANÁLISIS INICIAL` (71–89) y `CORRECCIÓN TÉCNICA EN EVALUACIÓN` (corrección técnica de administrador, 81–100).
+- `glpi_itilsolutions`: `SOLUCIÓN AL CASO` (90–100, nunca con corrección técnica de administrador).
 - `glpi_tickets`: categoría, impacto, prioridad y `status` (6.4, 2-A, 4.0).
 - `glpi_tickets_users`: asignación `type = 2` (6.4).
 - `glpi_plugin_fields_ticketticketsformfields`: solo `scoreagentefield` y `plugin_fields_aplicaiafielddropdowns_id` (6-C).
@@ -496,7 +530,7 @@ VALUES
 ```
 
 - Si las columnas `version_skill`, `tipo_caso`, `gate_resultado` o `evidencia_json` aún no existen en la tabla (verificar con `pg_describe_table`), omitirlas del `INSERT` y guardar esos valores dentro de `respuesta_modelo_raw`.
-- `followup_publico_solucion_id` lleva el id del canal 6.3 (solución, tarea o followup); con tarea, `respuesta_modelo_raw` indica `"canal_respuesta": "tarea"`. Todos los ids de las partes del análisis van en `respuesta_modelo_raw`, junto con `"reanalisis": N` cuando aplique.
+- `followup_publico_solucion_id` lleva el id del canal 6.3 (solución, tarea o followup); con tarea, `respuesta_modelo_raw` indica `"canal_respuesta": "tarea"` (o `"tarea_correccion_tecnica"` con corrección técnica de administrador). Todos los ids de las partes del análisis y del followup privado 6.3-bis (`"solucion_propuesta_ids"`) van en `respuesta_modelo_raw`, junto con `"reanalisis": N` cuando aplique.
 - **`estado_procesamiento` (valores exactos):** `ok_alta_confianza` (análisis publicado, score **81–100**), `ok_baja_confianza` (análisis publicado, score **0–80**), `preguntas_enviadas`, `esperando_respuesta_cliente`, `capacitacion`, `proyecto_no_registrado`, `duplicado_abortado`, `error`.
 - `nivel_sla` y `criticidad`: solo los valores de la tabla de 6.1.
 - Registrar siempre, también en preguntas, espera, duplicado, no registrado o error (con los ids que sí se generaron).
@@ -512,9 +546,11 @@ VALUES
 5. Componente confirmado (o `COMPONENTE_NO_CONFIRMADO`), en su versión desplegada cuando hay BD; precedentes, tickets previos, reanálisis y playbooks verificados con un dato de este caso; fallos de IA validados en tickets similares considerados.
 6. Alcance e impacto del cambio medidos cuando hay flujo compartido o cambio de configuración; volumen alto → Fase 1 / Fase 2; workaround y definitiva separados.
 7. Script sugerido presente si hay que cambiar datos, sin punto y coma y con separadores; nada ejecutado sobre el ERP.
-8. §7 con ruta de menú completa, etiqueta del campo, valor exacto, cómo verificar y qué hacer si no funciona.
+8. §7 con ruta de menú completa, etiqueta del campo, valor exacto, cómo verificar y qué hacer si no funciona (con corrección técnica de administrador, la ruta y el campo solo para la verificación del usuario: ver ítem 14).
 9. §7 empieza por la causa identificada y corrige esa causa: nunca repite como hallazgo el síntoma del ticket ni ofrece un workaround como única solución. Con ancla E o causa de cálculo, mecanismo reproducido contra un caso OK o score máx. 70. Si existe un caso comparable, el dato que distingue está nombrado (motor 2.11) en la §7. Después, descenso hasta la causa terminal (motor 2.10). El canal público 6.3 lleva la §7 completa, incluidos "Qué identificamos" y "Por qué ocurre".
 10. Gate 5-C aplicado; 9 secciones completas con §7; canal 6.3 según el rango del score final; `status` según 6.4 (nunca queda en Nuevo tras publicar el análisis); Score agente y Aplica IA escritos (6-C); campos de validación humana intactos.
-11. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]` y Solución al Caso por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
+11. Un solo `[TRIAGE-SLA-SCORE]`, `[TRIAGE-ANALISIS-9PASOS]`, Solución al Caso (o `ANÁLISIS INICIAL` + `[TRIAGE-SOLUCION-PROPUESTA]`) por ticket sin respuesta nueva del solicitante, sin comentarios de corrección posteriores. **Excepción:** si un análisis publicado omitió la §7 o el script obligatorio, un único followup privado `[TRIAGE-ANALISIS-9PASOS] Completar secciones faltantes` solo con lo omitido.
 12. Cada escritura verificada por `SELECT` aparte, bajo ~3,2 KB, sin punto y coma, con tablas en atributos HTML legados.
 13. Log registrado con valores exactos de estado, SLA y criticidad, versión de skill, tipo de caso, resultado del gate y bloque de evidencia.
+14. Corrección en Diccionario de la Aplicación o con rol System Administrator (motor Paso 2.12): §7 con plantilla C (causa + "corrección de nivel técnico, se evaluará el cambio"), sin pasos de administración ni códigos internos en ningún canal público; procedimiento completo solo en 6.2 privado; canal `CORRECCIÓN TÉCNICA EN EVALUACIÓN`, nunca `glpi_itilsolutions`; status 3 y asignación a perfil Técnico.
+15. Publicación por score: 90–100 → §7 completa con pasos en `SOLUCIÓN AL CASO`. 71–89 → tarea pública `ANÁLISIS INICIAL` solo con saludo, "Qué identificamos", "Por qué ocurre" y la nota de análisis inicial (sin pasos, rutas ni valores a cambiar), y a continuación followup privado `[TRIAGE-SOLUCION-PROPUESTA]` con el bloque solución. 0–70 → nada público.
