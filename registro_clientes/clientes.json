@@ -1,7 +1,7 @@
 {
   "ACTUARIA CONSULTORES S.A": { "owner": "Sidesoftpreprod", "repo": "ActuariaCodigoCompleto" , "openbravo_db_alias": "actuaria" },
   "GAYATA": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoGayata" , "openbravo_db_alias": "gayata" },
-  "HAPPYCELL": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappy" , "openbravo_db_alias": "happycell" },
+  "HAPPYCELL": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappy", "base_path": "happycell", "openbravo_db_alias": "happycell" },
   "HAPPYPAY": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoHappyPay" , "openbravo_db_alias": "happypay" },
   "SANFELIPE": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoSanFelipe", "openbravo_db_alias": "sanfelipe" },
   "TEXTICOM": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoTexticom", "openbravo_db_alias": "texticom" },
