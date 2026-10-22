@@ -6,6 +6,6 @@
   "SANFELIPE": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoSanFelipe", "openbravo_db_alias": "sanfelipe" },
   "TEXTICOM": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoTexticom", "openbravo_db_alias": "texticom" },
   "UNNOPARTS": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoUnnoParts", "openbravo_db_alias": "unnoparts" },
-  "MEDINUCLEAR": { "owner": "Sidesoftpreprod", "repo": "MediNuclearCodigoCompleto", "openbravo_db_alias": "medinuclear" },
+  "MEDINUCLEAR": { "owner": "Sidesoftpreprod", "repo": "MediNuclearCodigoCompleto", "openbravo_db_alias": "diagnosciencia" },
   "INDUMOT SA": { "owner": "Sidesoftpreprod", "repo": "CodigoCompletoIndumot" , "openbravo_db_alias": "indumot" }
 }
